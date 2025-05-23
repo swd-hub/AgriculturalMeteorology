@@ -5,12 +5,14 @@
 <meta name="auther" content="澤田泰人">
 <meta name="date" content="2025年5月4日">
 <meta charset="UTF-8">
-<title>気象経過</title>
+<meta name="robots" content="noindex, nofollow">
+    <title>気象経過</title>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Weather Data Visualizer</title>
     <script src=" https://cdn.jsdelivr.net/npm/chart.js "></script>
     <script src=" https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@latest "></script>
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
     <style>
 /* 印刷用の設定 */
 @media print {
@@ -181,6 +183,74 @@ input[type="date"], input[type="file"], input[type="number"] {
 </div>
 </div>
     <script>
+        const file = document.getElementById("fileInput").files[0];
+if (!file) return;
+
+// ファイル名の先頭5文字が「出雲日別値」かチェック
+if (!file.name.startsWith("出雲日別値")) {
+  alert("出雲日別値ファイルのみ対応しています");
+  return;
+}
+ Papa.parse(file, {
+  encoding: "Shift_JIS",
+  skipEmptyLines: true,
+  complete: function(results) {
+    // results.data: 2次元配列
+    const data = parseIzumoCSV(results.data);
+    // ...以降は既存のグラフ描画処理へ
+  }
+});
+function parseIzumoCSV(rows) {
+    // データ本体は通常6行目から（0スタートでrows[5]以降）
+    // 1: 空、2: 観測所名、3: 項目名、4: 単位（平年値等）、5: 品質情報
+    // rows[5]以降がデータ行
+
+    // 欲しい列のインデックスを取得
+    // 年,月,日,平均気温(℃),降水量の合計(mm),日照時間(時間),平年値(平均気温),平年値(降水量),平年値(日照),最高,最低,平年値(最高),平年値(最低)
+    const cols = rows[2]; // 項目名行
+    const cols_unit = rows[3]; // 単位・平年値等（値の判定用）
+
+    // 「平均気温(℃)」で「平年値」表記がないもの（実測値）を探し出す
+    const idx_year = cols.findIndex(c => c === "年");
+    const idx_month = cols.findIndex(c => c === "月");
+    const idx_day = cols.findIndex(c => c === "日");
+    const idx_temp = cols.findIndex((c, i) => c === "平均気温(℃)" && !cols_unit[i].includes("平年値"));
+    const idx_prec = cols.findIndex((c, i) => c === "降水量の合計(mm)" && !cols_unit[i].includes("平年値"));
+    const idx_sun = cols.findIndex((c, i) => c === "日照時間(時間)" && !cols_unit[i].includes("平年値"));
+
+    // 平年値
+    const idx_temp_avg = cols.findIndex((c, i) => c === "平均気温(℃)" && cols_unit[i].includes("平年値"));
+    const idx_prec_avg = cols.findIndex((c, i) => c === "降水量の合計(mm)" && cols_unit[i].includes("平年値"));
+    const idx_sun_avg = cols.findIndex((c, i) => c === "日照時間(時間)" && cols_unit[i].includes("平年値"));
+
+    // 最高・最低・その平年値
+    const idx_temp_max = cols.findIndex((c, i) => c === "最高気温(℃)" && !cols_unit[i].includes("平年値"));
+    const idx_temp_min = cols.findIndex((c, i) => c === "最低気温(℃)" && !cols_unit[i].includes("平年値"));
+    const idx_temp_max_avg = cols.findIndex((c, i) => c === "最高気温(℃)" && cols_unit[i].includes("平年値"));
+    const idx_temp_min_avg = cols.findIndex((c, i) => c === "最低気温(℃)" && cols_unit[i].includes("平年値"));
+
+    // データ行だけを抽出して整形
+    const result = [];
+    for(let i = 5; i < rows.length; i++) {
+        const r = rows[i];
+        if(!r[idx_year] || !r[idx_month] || !r[idx_day]) continue; //日付不正無視
+        result.push({
+            date: new Date(Date.UTC(Number(r[idx_year]), Number(r[idx_month]) - 1, Number(r[idx_day]))),
+            temperature: parseFloat(r[idx_temp]) || 0,
+            precipitation: parseFloat(r[idx_prec]) || 0,
+            sunshine: parseFloat(r[idx_sun]) || 0,
+            avgTemperature: parseFloat(r[idx_temp_avg]) || 0,
+            avgPrecipitation: parseFloat(r[idx_prec_avg]) || 0,
+            avgSunshine: parseFloat(r[idx_sun_avg]) || 0,
+            maxTemperature: parseFloat(r[idx_temp_max]) || 0,
+            minTemperature: parseFloat(r[idx_temp_min]) || 0,
+            avgMaxTemperature: parseFloat(r[idx_temp_max_avg]) || 0,
+            avgMinTemperature: parseFloat(r[idx_temp_min_avg]) || 0
+        });
+    }
+    return result;
+}
+        
 function updateMainTitle() {
     const startDate = document.getElementById("cultivationStartDate").value;
     const endDate = document.getElementById("cultivationEndDate").value;
