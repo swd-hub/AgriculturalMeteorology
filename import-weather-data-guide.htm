@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta name="discription" content="気象データのダウンロードの仕方を説明する。">  
+    <meta name="auther" content="澤田泰人">
+    <meta name="date" content="2025年5月4日">
+    <meta charset="UTF-8">
+<title>気象データのダウンロード</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GIFスライダー</title>
+    <style>
+        /* 画面表示用スタイル */
+        @media screen {
+            .large-content {
+                font-size: 24px;
+                width: 100%;
+            }
+        }
+
+        /* 共通スタイル */
+        html, body {
+            height: 100%;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column; /* 縦に並べる */
+        }
+
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        h1 {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px;
+            text-align: center;
+            position: relative; /* 相対位置を設定 */
+            z-index: 10; /* 前面に表示されるよう設定 */
+            margin-top: 30px; /* 上に余白を追加 */
+        }
+
+        h2 {
+            padding: 10px;
+            text-align: center;
+        }
+
+        .right-align {
+            text-align: right;
+        }
+
+        #fileList {
+            margin-top: 10px;
+        }
+
+        /* スライダー関連スタイル */
+        .slider {
+            position: relative; /* スライダー自体の相対位置を設定 */
+            z-index: 1; /* スライダーのz-indexを下げておく */
+        }
+
+        .slides {
+            position: relative; /* スライドの相対位置を設定 */
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            z-index: 1; /* スライドのz-indexを設定 */
+        }
+
+        .slide {
+            display: none; /* 初期状態で非表示 */
+            height: auto; /* 高さを自動に設定 */
+            margin-left: 20px; /* 右に平行移動（必要に応じて調整） */
+            position: relative; /* スライドの位置を相対に設定 */
+            z-index: 1; /* <h1> より低い z-index を設定 */
+        }
+
+        .active {
+            display: block; /* activeクラスのときだけ表示 */
+            margin-left: 0; /* アクティブなスライドは左マージンを0に設定 */
+            z-index: 2; /* アクティブなスライドのz-indexを高めておく */
+        }
+    </style>
+</head>
+
+<body>
+    <button onclick="window.open(' https://www.data.jma.go.jp/gmd/risk/obsdl/index.php ', '_blank')">気象庁のサイトを開く</button>
+    <h1>気象データのダウンロード</h1>
+        <div class="slider">
+        <button class="prev" onclick="changeSlide(-1)">&#10094;</button>
+        <button class="next" onclick="changeSlide(1)">&#10095;</button>
+        <h2 id="slideDescription">説明文がここに入ります。</h2> <!-- 説明文を表示する要素 -->
+        <div class="slides">
+            <img src="images/FIG１.png" class="slide active">
+            <img src="images/FIG２.png" class="slide">
+            <img src="images/FIG３.png" class="slide">
+            <img src="images/FIG４.png" class="slide">
+            <img src="images/FIG５.png" class="slide">
+            <img src="images/FIG６.png" class="slide">
+            <img src="images/FIG７.png" class="slide">
+            <img src="images/FIG８.png" class="slide">
+            <img src="images/FIGHR.png" class="slide">
+            <img src="images/FIG９.png" class="slide">
+        </div>
+    </div>
+    <script>
+        let currentSlide = 0;
+
+        const descriptions = [
+            "１　都道府県選択: 地図の県名をクリックする",
+            "２　県内地点: 一地点をクリックする",
+            "３　県内地点: 選択すると画面右の選択された地点が表示される",
+            "４　日別値の項目を選ぶ: 気温では黄色網掛け項目を選ぶ　画面右の選択された項目に表示される",
+            "５　降水: 黄色網掛け項目を選ぶ",
+            "６　日照/日射: 日照時間を選ぶ",
+            "７　期間を選ぶ: 連続した期間で表示するを選ぶ　選択済みのデータ量グラフに注意",
+            "８　表示オプションを選ぶ: 黄色網掛け項目を選ぶ　年月日などに分けて格納を選ぶこと　ＣＳＶファイルをダウンロードをクリック",
+            "９　時別値のダウンロード: 黄色網掛け項目を選び、ＣＳＶファイルをダウンロードをクリック",
+            "１０　ダウンロード: オリジナルのダウンロードを選択"
+        ];
+
+        function showSlide(index) {
+            const slides = document.querySelectorAll('.slide');
+            const description = document.getElementById('slideDescription');
+            if (index >= slides.length) {
+                currentSlide = 0;
+            } else if (index < 0) {
+                currentSlide = slides.length - 1;
+            } else {
+                currentSlide = index;
+            }
+
+            slides.forEach((slide, i) => {
+                slide.classList.remove('active');
+                if (i === currentSlide) {
+                    slide.classList.add('active');
+                }
+            });
+
+            // 説明文を更新
+            description.textContent = descriptions[currentSlide];
+        }
+
+        function changeSlide(direction) {
+            showSlide(currentSlide + direction);
+        }
+
+        // 初期スライドと説明文を表示
+        showSlide(currentSlide);
+    </script>
+
+</body>
+</html>

@@ -1,0 +1,898 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta name="discription" content="気象データを用いて日別値の有効積算温度、累積降水量、有効日照時間の積算の年次変動を計算し、グラフ化する。">  
+<meta name="auther" content="澤田泰人">
+<meta name="date" content="2025年5月4日">
+<meta charset="UTF-8">
+
+    <title>気象データ・有効データの年次変動</title>
+    <!-- 外部ライブラリ -->
+    <script src=" https://cdn.jsdelivr.net/npm/chart.js "></script>
+    <script src=" https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@latest "></script>
+    <style>
+/*.chart-container, .chart-group {
+ display: flex;
+ justify-content: flex-start; /* 左寄せで整列 */
+/* 上寄せで整列 */
+/*
+.chart-container canvas {
+ margin-bottom: 30px;
+ padding: 30px;
+}
+*/
+@media print {
+  * {
+    margin: 0;
+    padding: 0;
+  }
+  .table-container, h5 {
+    display: none;
+  }
+  .chart-container, .content {
+    page-break-inside: avoid;
+    page-break-before: auto;
+    page-break-after: auto;
+  }
+  /* ボタンの表示設定を解除 */
+  .no-print, img {
+    display: none;
+  }
+}
+button {
+  background-color: #4CAF50;
+  color: white;
+  padding: 10px 20px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+form {
+  margin: 20px;
+  padding: 40px;
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  width: 200px;
+  float: left;
+}
+h1 {
+  background-color: #4CAF50;
+  color: white;
+  padding: 10px;
+  text-align: center;
+}
+h2 {
+  background-color: #4CAF50;
+  color: white;
+  padding: 10px;
+  text-align: left;
+  width: fit-content;
+}
+h3, h4 {
+  background-color: #4CAF50;
+  color: white;
+  width: fit-content;
+}
+label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: bold;
+}
+.chart-container {
+  width: 800px;
+  /* 辺の長さ2倍 */
+  height: 600px;
+  /* 辺の長さ2倍 */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin: auto;
+  padding: 20px;
+  page-break-before: always;
+}
+.charts-wrapper {
+  display: flex;
+  gap: 15px;
+  /* グラフ間の余白 */
+  flex-wrap: wrap;
+  /* 画面が狭い場合に折り返す */
+}
+.container {
+  display: flex;
+  align-items: flex-start;
+  gap: 20px;
+}
+.container {
+  display: flex;
+  align-items: flex-start;
+  /* 上端を揃える */
+  gap: 20px;
+  /* 表とグラフの間隔 */
+  position: absolute;
+  left: 40px;
+  top: 930px;
+}
+.right-align {
+  text-align: right;
+}
+.slider {
+  position: relative;
+  width: 60px;
+  /* スライダーの幅を調整 */
+  height: 20px;
+  /* スライダーの高さを調整 */
+  cursor: pointer;
+  background-color: #ccc;
+  transition: 0.4s;
+  border-radius: 20px;
+  /* 丸みを調整 */
+}
+.startYearTable {
+  border-collapse: collapse;
+  width: 123%;
+}
+.switch {
+  position: relative;
+  display: flex;
+  /* Flexboxで配置 */
+  align-items: center;
+  /* 縦方向中央揃え */
+  width: auto;
+  /* 幅をコンテンツに合わせて調整 */
+  height: auto;
+  /* 高さをコンテンツに合わせて調整 */
+  margin-bottom: 10px;
+  /* 下の要素との間隔を調整 */
+  gap: 10px;
+  /* ボタンと説明の間のスペースを追加 */
+}
+.table-container {
+  width: 70%;
+  float: left;
+  margin-top: 20px;
+  background-color: #f9f9f9;
+  /* 背景色を追加 */
+  border-radius: 8px;
+  /* 角を丸くする */
+  overflow: hidden;
+  /* ボーダー外にはみ出す部分を隠す */
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  /* 少し立体感を追加 */
+}
+.chart-container canvas {
+  width: 100%;
+  height: 100%;
+}
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 16px;
+  /* ボールの高さを調整 */
+  width: 16px;
+  /* ボールの幅を調整 */
+  left: 2px;
+  /* ボールの左からの位置を調整 */
+  bottom: 2px;
+  /* ボールの下からの位置を調整 */
+  background-color: white;
+  transition: 0.4s;
+  border-radius: 50%;
+  /* ボールを丸く */
+}
+.startYearTable td, .startYearTable th {
+  padding: 8px;
+  text-align: center;
+}
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.switch span {
+  margin-left: 10px;
+  /* チェックボックスとテキストの間にスペースを追加 */
+  white-space: nowrap;
+  /* テキストが折り返さないように */
+  font-size: 16px;
+  /* 説明文のフォントサイズを調整 */
+}
+.table-container table {
+  border-collapse: collapse;
+  width: 70%;
+}
+.table-container td, .table-container th {
+  border: 1px solid #ccc;
+  padding: 8px;
+}
+input[type="date"], input[type="file"], input[type="number"] {
+  width: 100%;
+  padding: 12px;
+  font-size: 16px;
+  margin-bottom: 12px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+input:checked + .slider {
+  background-color: #2196F3;
+}
+input:checked + .slider:before {
+  transform: translatex(12px);
+  /* ボールの移動距離を調整 */
+}
+#cumulativeDataTable, #results p {
+  font-size: 20px;
+  padding: 2px;
+  margin: 0;
+}
+#results {
+  padding: 5px;
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  margin: 0 auto;
+  width: fit-content;
+  position: absolute;
+  left: 329px;
+  top: 645px;
+}    </style>
+</head>
+<body>
+    <header>
+        <h1>気象データ・有効データの年次変動</h1>
+        <div class="right-align">
+        <button onclick="window.open(' https://www.data.jma.go.jp/gmd/risk/obsdl/index.php ', '_blank')">気象庁のサイトを開く</button>
+        <!--button onclick="window.open('images/WetherOption.png', '_blank')">過去の気象データ・ダウンロードで選ぶ表示オプション</button-->
+        </div>
+    </header>
+            <p>以下にCSVファイルをドラッグ＆ドロップするか、選択してください。</p>
+            <input type="file" id="fileInput" accept=".csv" title="CSVファイルを選択してください">
+        <!-- 設定フォーム -->
+        <section>
+
+            <form>
+                    <h3>直近の栽培条件を設定</h3>
+                    <label for="cultivationStartDate">栽培開始日:</label>
+                    <input type="date" id="cultivationStartDate" >
+                    <label for="cultivationEndDate">栽培終了日:</label>
+                    <input type="date" id="cultivationEndDate" >
+                    <label for="tempMin">有効気温下限:</label>
+                    <input type="number" id="tempMin" value="10" step="1">
+                    <label for="tempMax">有効気温上限:</label>
+                    <input type="number" id="tempMax" value="30" step="1">
+                <label class="switch">
+                <input type="checkbox" id="tempSumToggle" checked>
+                <span class="slider round"></span>
+                ：有効気温上限を超える気温の処理
+            </label>
+            <button type="button" id="updateButton">データ更新</button>
+            </form>
+
+            <div class="table-container">
+
+            <table>
+                        <h3>このアプリケーションでの定義</h3>
+                <tr>
+                    <th>有効温度</th>
+                    <th>作物の生育に適する気温</th>
+                </tr>
+                <tr>
+                    <td>有効積算温度</td>
+                    <td>有効気温上限と下限の範囲にある気温から有効気温下限を減じた値を積算</td>
+                </tr>
+                <tr>
+                    <td>累積降水量</td>
+                    <td>栽培期間の降水量の累積</td>
+                </tr>
+                <tr>
+                    <td>有効日照時間の積算</td>
+                    <td>有効温度が０を超える場合での日照時間の積算</td>
+                </tr>
+                <tr>
+                    <td>有効気温上限を超える気温の処理</td>
+                    <td>ＯＮ：気温が有効気温上限を超える場合、有効気温上限に換える</br>ＯＦＦ：有効気温上限を超える気温は省く</td>
+                </tr>
+                <tr>
+            </table>
+        </div>
+
+        <!-- 集計結果表示エリア -->
+        <div id="results">
+            <h2>集計結果</h2>
+            <table id="cumulativeDataTable" class="cumulativeDataTable">
+                <!-- 結果がここに挿入されます -->
+            </table>
+        </div>
+<div class="container">
+    <!-- 栽培開始年ごとのデータテーブル -->
+    <section>
+        <h2>栽培開始年ごとのデータ</h2>
+        <table id="startYearTable" class="startYearTable" border="1">
+            <!-- 年ごとのデータがここに挿入されます -->
+        </table>
+    </section>
+    <!-- グラフ -->
+    <div class="charts-wrapper">
+        <div class="chart-container">
+            <canvas id="temperatureChart" width="200" height="150"></canvas>
+        </div>
+        <div class="chart-container">
+            <canvas id="precipitationChart" width="200" height="150"></canvas>
+        </div>
+        <div class="chart-container">
+            <canvas id="sunshineChart" width="200" height="150"></canvas>
+        </div>
+    </div>
+</div>
+<script>
+  const today = new Date();
+const year = today.getFullYear();
+// 栽培開始日を昨年の1月1日に設定
+document.getElementById('cultivationStartDate').value = `${year - 1}-01-01`;
+// 栽培終了日を昨年の本日の日付に設定
+const lastYearToday = new Date(today.setFullYear(year - 1));
+document.getElementById('cultivationEndDate').value = lastYearToday.toISOString().split('T')[0];
+
+
+//
+/*        function createCSVContent(data) {
+            // CSVコンテンツ作成の例
+            const headers = ["年", "月", "日", "平均気温(℃)", "降水量の合計(mm)", "日照時間(時間)"];
+            const csvContent = data.map(row => {
+                return `${row.date.getFullYear()},${row.date.getMonth() + 1},${row.date.getDate()},${row.temperature},${row.precipitation},${row.sunshine}`;
+            });
+            csvContent.unshift(headers.join(","));
+            return csvContent.join("\n");
+        }
+        */
+
+        let dailyTempChart, dailyPrecChart, dailySunChart;
+        let cumulativeTempChart, cumulativePrecChart, cumulativeSunChart;
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('fileInput').addEventListener('change', handleFileSelect, false);
+            document.getElementById('updateButton').addEventListener('click', handleFileSelect, false);
+        });
+        async function updateAndDownloadCSV(file) {
+            const content = await readCSVFile(file);
+            //console.log('Read CSV Content:', content);
+            const utf8Content = shiftJISToUTF8(content);
+            //console.log('UTF-8 Content:', utf8Content);
+            const parsedData = parseCSV(utf8Content);
+            //console.log('Parsed Data:', parsedData);
+            const updatedContent = createCSVContent(parsedData);
+            //console.log('Updated Content:', updatedContent);
+            const bom = '\uFEFF';
+            let blob = new Blob([bom + updatedContent], { type: 'text/csv;charset=utf-8;' });
+            let link = document.createElement("a");
+            link.href = URL.createObjectURL(blob);
+            link.setAttribute("download", "updated_data.csv");
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+       
+
+/// ファイル入力イベント
+document.getElementById("fileInput").addEventListener("change", async function () {
+    const file = this.files[0];
+    if (file) {
+        const arrayBuffer = await readCSVFile(file);
+        const utf8Data = shiftJISToUTF8(arrayBuffer);
+        const parsedData = parseCSV(utf8Data);
+        //console.log("解析されたデータ:", parsedData);
+        initializeTable(parsedData);
+    }
+});
+
+// ファイルを読み込む関数（Promiseベース）
+async function readCSVFile(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsArrayBuffer(file);
+    });
+}
+
+
+// Shift-JISをUTF-8に変換する関数
+function shiftJISToUTF8(arrayBuffer) {
+    try {
+        const decoder = new TextDecoder("shift-jis", { fatal: true });
+        const uint8Array = new Uint8Array(arrayBuffer);
+        return decoder.decode(uint8Array);
+    } catch (error) {
+        console.error("Shift-JIS から UTF-8 の変換に失敗しました:", error);
+        return "";
+    }
+}
+
+
+//
+        function shiftJISToUTF8(arrayBuffer) {
+            const decoder = new TextDecoder('shift-jis');
+            const uint8Array = new Uint8Array(arrayBuffer);
+            return decoder.decode(uint8Array);
+        }
+       
+
+
+function handleFileSelect() {
+    const file = document.getElementById("fileInput").files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function (e) {
+        const utf8Content = shiftJISToUTF8(e.target.result);
+        //console.log('UTF-8 Content:', utf8Content);
+        const data = parseCSV(utf8Content);
+        //console.log('Parsed Data:', data);
+       
+        // 日付を1日進める必要なし
+        data.forEach(d => d.date.setDate(d.date.getDate()));
+        const startDate = new Date(document.getElementById("cultivationStartDate").value);
+        const endDate = new Date(document.getElementById("cultivationEndDate").value);
+        const tempMin = parseFloat(document.getElementById("tempMin").value);
+        const tempMax = parseFloat(document.getElementById("tempMax").value);
+        const graphStart = new Date(startDate);
+        graphStart.setMonth(graphStart.getMonth());  // - 1トル
+        const graphEnd = new Date(endDate);
+        graphEnd.setMonth(graphEnd.getMonth());  //  + 1トル
+        const filteredData = filterData(data, graphStart, graphEnd);
+       
+        //console.log("filteredData",filteredData);
+       
+        const cumulativeData = calculateCumulativeDataWithTable(filteredData, startDate, endDate, tempMin, tempMax);
+        updateTable(cumulativeData.table);
+       
+        //console.log('cumulativeData',cumulativeData);
+       
+    };
+       
+    reader.readAsArrayBuffer(file);
+}
+
+
+       
+    function filterData(data, graphStart, graphEnd) {
+        return data.filter(d => d.date >= graphStart && d.date <= graphEnd);
+    }
+
+
+//パース
+function parseCSV(content) {
+   const lines = content.trim().split('\n').filter(line => line.trim() !== "");
+
+    // "数行のヘッダーを結合してcombinedHeadを作成
+    let lines1 = lines[2].split(',');
+    let lines2 = lines[3].split(',');
+    let lines3 = lines[4].split(',');
+
+        let combinedHead = [];
+        for (let i = 0; i < lines1.length; i++) {
+            combinedHead.push(lines1[i].replace(/\r/g, '') + lines2[i].replace(/\r/g, '') + lines3[i].replace(/\r/g, ''));
+        }
+
+    // デバッグログ
+    console.log('Combined Header:', combinedHead);
+
+    const targetHeaders = ["年", "月", "日", "平均気温(℃)", "降水量の合計(mm)", "日照時間(時間)"];
+   
+    let indicesToSelect = targetHeaders.map(header => combinedHead.indexOf(header));
+
+    // デバッグログ
+    //console.log('Indices to Select:', indicesToSelect);
+
+    // データ行を処理
+    const dataLines = lines.slice(6).map(line => {   //5だった
+    const cols = line.split(',');
+    const selectedCols = indicesToSelect.map(index => index >= 0 ? cols[index] || '0' : '0'); // 存在しない場合はデフォルト値'0'
+
+       // console.log('Selected Columns:', selectedCols);
+        return selectedCols.join(',');
+    });
+
+    console.log('Data Lines:', dataLines);
+
+    // ヘッダー行を追加
+    dataLines.unshift(targetHeaders.join(','));
+
+    // デバッグログ
+    console.log('Data Lines with Header:', dataLines);
+
+    return dataLines.slice(1).map(line => { // ヘッダー行をスキップ
+        const cols = line.split(",");
+        return {
+            date: new Date(Date.UTC(cols[0], cols[1] - 1, cols[2])),
+            temperature: parseFloat(cols[3]) || 0,
+            precipitation: parseFloat(cols[4]) || 0,
+            sunshine: parseFloat(cols[5]) || 0
+        };
+    });
+}
+
+
+
+
+//入力期間の集計結果を表示
+        function updateTable(tableData) {
+            try {
+                //console.log("Table Data:", tableData);
+                const table = document.getElementById("cumulativeDataTable");
+                table.innerHTML = "";
+                tableData.forEach(row => {
+                    const tr = document.createElement("tr");
+                    const tdLabel = document.createElement("td");
+                    const tdValue = document.createElement("td");
+                    tdLabel.textContent = row.label;
+                    tdValue.textContent = row.value;
+                    tr.appendChild(tdLabel);
+                    tr.appendChild(tdValue);
+                    table.appendChild(tr);
+                });
+                //console.log("Table updated successfully");
+            } catch (error) {
+                console.error("テーブル更新中にエラーが発生しました:", error);
+            }
+        }
+       
+       
+//
+function calculateEffectiveAccumulatedTemperature(data, startDate, endDate, tempMin, tempMax) {
+    let effectiveTempSum = 0;
+    let validDataCount = 0;
+    let effectiveSunSum = 0;
+    let precSum = 0;
+    // トグルボタンのチェック状態を取得
+    const tempSumToggle = document.getElementById('tempSumToggle').checked;
+    data.forEach(entry => {
+        const date = new Date(entry.date);
+        // startDate を 1か月前に設定
+        let adjustedStartDate = new Date(startDate);
+        adjustedStartDate.setMonth(adjustedStartDate.getMonth() - 1);
+        // 栽培期間内の条件を適用
+        if (date >= adjustedStartDate && date <= endDate) {
+            let temperature = entry.temperature;
+            // トグルボタンがチェックされている場合、温度の上限を適用
+            if (tempSumToggle && temperature > tempMax) {
+                temperature = tempMax;
+            }
+            // 気温条件を満たした場合のみ加算
+            if (temperature >= tempMin && temperature <= tempMax && date >= startDate && date <= endDate) {
+                effectiveTempSum += (temperature - tempMin); // 下限値を引いた値を積算
+                effectiveSunSum += entry.sunshine;
+                validDataCount++;
+            }
+            // 降水量は温度に関係なく加算
+            precSum += entry.precipitation;
+        }
+    });
+    return { effectiveTempSum, effectiveSunSum, validDataCount, precSum };
+}
+
+//
+function calculateCumulativeDataWithTable(data, startDate, endDate, tempMin, tempMax) {
+    let tempSum = 0, precSum = 0, sunSum = 0;
+    let cumulative = { dates: [], temperature: [], precipitation: [], sunshine: [], table: [] };
+    // トグルボタンのチェック状態を取得
+    const tempSumToggle = document.getElementById('tempSumToggle').checked;
+    data.forEach(entry => {
+        const date = new Date(entry.date);
+        // 栽培期間内の条件を適用
+        if (date >= startDate && date <= endDate) {
+            let temperature = entry.temperature;
+            // トグルボタンがチェックされている場合、温度の上限を適用
+            if (tempSumToggle && temperature > tempMax) {
+                temperature = tempMax;
+            }
+            // 気温が下限と上限を満たした場合のみ累積計算
+            if (temperature >= tempMin && temperature <= tempMax) {
+                tempSum += (temperature - tempMin);
+                sunSum += entry.sunshine;
+            }
+            // 降水量は温度に関係なく累積
+            precSum += entry.precipitation;
+        }
+        // 累積データの記録
+        cumulative.dates.push(entry.date.toISOString().split('T')[0]);
+        cumulative.temperature.push(tempSum);
+        cumulative.precipitation.push(precSum);
+        cumulative.sunshine.push(sunSum);
+    });
+    // 栽培期間の日数を計算
+    const cultivationDays = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24) + 1); // 終了日を含む
+    const { effectiveTempSum, effectiveSunSum, validDataCount, precSum: calculatedPrecSum } = calculateEffectiveAccumulatedTemperature(data, startDate, endDate, tempMin, tempMax);
+    cumulative.table = [
+        { label: "栽培期間の日数 (Cultivation Period in Days)", value: cultivationDays },
+        { label: "有効データ数 (Valid Data Count)", value: validDataCount },
+        { label: "有効積算温度(℃)（Effective Cumulative Temperature）:", value: Math.floor(effectiveTempSum) },
+        { label: "累積降水量(mm)（Cumulative Rainfall）:", value: Math.floor(calculatedPrecSum) },
+        { label: "有効日照時間の積算(時間)（Accumulated sunshine hours）:", value: Math.floor(effectiveSunSum) }
+    ];
+    return cumulative;
+}
+
+// 更新ボタンのクリックイベント
+document.getElementById("updateButton").addEventListener("click", function () {
+    const fileInput = document.getElementById("fileInput");
+    if (fileInput.files.length === 0) {
+        alert("CSVファイルをアップロードしてください。");
+        return;
+    }
+   
+    // アップロードされたファイルを再読み込み
+    readCSVFile(fileInput.files[0])
+        .then(arrayBuffer => {
+            const utf8Data = shiftJISToUTF8(arrayBuffer);
+            const parsedData = parseCSV(utf8Data);
+            // テーブルを初期化・更新
+            initializeTable(parsedData);
+        })
+        .catch(error => {
+            console.error("ファイルを読み込む際にエラーが発生しました:", error);
+            alert("ファイルの読み込みに失敗しました。");
+        });
+});
+
+// 年ごとの積算データを計算する関数
+function calculateCumulativeValues(data, startDate, endDate, tempMin, tempMax) {
+    const results = {};
+    let currentYear = startDate.getFullYear();
+    let followingYear = endDate.getFullYear(); //////////////修正中//////////////////
+   
+    const tempSumToggle = document.getElementById('tempSumToggle').checked;
+    while (currentYear > 1978) {
+        const periodStart = new Date(Date.UTC(currentYear, startDate.getMonth(), startDate.getDate()));
+        const periodEnd = new Date(Date.UTC(followingYear, endDate.getMonth(), endDate.getDate()));
+       
+        // 気温条件をフィルタリングに含めない
+        const filteredData = data.filter(entry => {
+            const entryDate = new Date(entry.date);
+            return entryDate >= periodStart && entryDate <= periodEnd;
+        });
+        let tempSum = 0;
+        let sunSum = 0;
+        let precSum = 0;
+        filteredData.forEach(entry => {
+            let temperature = entry.temperature;
+            // 温度計算の条件付き調整
+            if (tempSumToggle && temperature > tempMax) {
+                temperature = tempMax;
+            }
+            // 気温条件に基づいて累積する値
+            if (temperature >= tempMin && temperature <= tempMax) {
+                tempSum += (temperature - tempMin);
+                sunSum += entry.sunshine;
+            }
+            // 降水量は気温条件を無視して累積
+            precSum += entry.precipitation;
+        });
+        // デバッグログ
+        //console.log('Year:', currentYear, 'Filtered Data Length:', filteredData.length, 'precSum:', precSum);
+        if (filteredData.length > 0) {
+            results[currentYear] = {
+                period: `${periodStart.toISOString().split('T')[0]} ～ ${periodEnd.toISOString().split('T')[0]}`,
+                cumulativeTemperature: tempSum.toFixed(1),
+                cumulativePrecipitation: precSum.toFixed(1),
+                cumulativeSunshine: sunSum.toFixed(1),
+            };
+        }
+        currentYear--;
+        followingYear--;
+       
+    }
+    return results;
+}
+// 年ごとのテーブルを生成する関数
+function createCumulativeTable(cumulativeResults) {
+    const table = document.getElementById("startYearTable");
+    table.innerHTML = "";
+    const headerRow = document.createElement("tr");
+    const headers = ["栽培期間", "有効積算温度(℃)", "累積降水量(mm)", "有効日照時間(時間)"];
+    headers.forEach(header => {
+        const th = document.createElement("th");
+        th.textContent = header;
+        headerRow.appendChild(th);
+    });
+    table.appendChild(headerRow);
+    Object.keys(cumulativeResults).forEach(year => {
+        const result = cumulativeResults[year];
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+            <td>${result.period}</td>
+            <td>${result.cumulativeTemperature}</td>
+            <td>${result.cumulativePrecipitation}</td>
+            <td>${result.cumulativeSunshine}</td>
+        `;
+        table.appendChild(tr);
+    });
+}
+
+
+// 初期化関数：入力条件を取得してテーブルを更新
+function initializeTable(data) {
+    const startDate = new Date(document.getElementById("cultivationStartDate").value);
+    const endDate = new Date(document.getElementById("cultivationEndDate").value);
+    if (startDate >= endDate) {
+        alert("終了日は開始日より後の日付を選択してください。");
+        return;
+    }
+    const tempMin = parseFloat(document.getElementById("tempMin").value);
+    const tempMax = parseFloat(document.getElementById("tempMax").value);
+    const cumulativeResults = calculateCumulativeValues(data, startDate, endDate, tempMin, tempMax);
+   
+//console.log('cumulativeResults',cumulativeResults);
+
+    createCumulativeTable(cumulativeResults);
+    createIndividualCharts(cumulativeResults);
+}
+
+//グラフの描画関数
+function createIndividualCharts(cumulativeResults) {
+    // yyyy-mm-dd → yy-m-d に変換
+const labels = Object.values(cumulativeResults).map(result => {
+    const dateRange = result.period.split('～'); // 範囲を分割
+    const formattedRange = dateRange.map(date => {
+        const dateParts = date.trim().split('-'); // yyyy-mm-dd を分割
+        const year = dateParts[0].slice(-2); // 西暦の下2桁を取得
+        const month = String(parseInt(dateParts[1], 10)); // 先頭の0を削除
+        const day = String(parseInt(dateParts[2], 10)); // 先頭の0を削除
+        return `${year}-${month}-${day}`; // yy-m-d 形式に変換
+    });
+    return `${formattedRange[0]}～${formattedRange[1]}`; // 範囲を結合
+});
+    const tempData = Object.values(cumulativeResults).map(result => parseFloat(result.cumulativeTemperature));
+    const precData = Object.values(cumulativeResults).map(result => parseFloat(result.cumulativePrecipitation));
+    const sunData = Object.values(cumulativeResults).map(result => parseFloat(result.cumulativeSunshine));
+   
+    // 共通の軸設定（目盛のフォントサイズを大きくする）
+    const axisOptions = {
+        ticks: {
+            font: {
+                size: 20
+            }
+        },
+        title: {
+            display: true,
+            font: {
+                size: 20
+            }
+        }
+    };
+   
+    // 温度グラフ
+    const tempChartInstance = Chart.getChart('temperatureChart');
+    if (tempChartInstance) {
+        tempChartInstance.destroy();
+    }
+    const tempCtx = document.getElementById('temperatureChart').getContext('2d');
+    new Chart(tempCtx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: '有効積算温度',
+                data: tempData,
+                borderColor: 'red',
+                borderWidth: 3,
+                fill: false,
+            }],
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    labels: {
+                        font: {
+                            size: 15
+                        }
+                    }
+                },
+                title: {
+                    display: true,
+                    text: '有効積算温度(℃)の推移',
+                    font: {
+                        size: 20
+                    }
+                }
+            },
+            scales: {
+                x: { ...axisOptions, title: { text: '栽培期間' } },
+                y: { ...axisOptions, title: { text: '温度' } },
+            },
+        },
+    });
+   
+    // 降水量グラフ
+    const precChartInstance = Chart.getChart('precipitationChart');
+    if (precChartInstance) {
+        precChartInstance.destroy();
+    }
+    const precCtx = document.getElementById('precipitationChart').getContext('2d');
+    new Chart(precCtx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: '累積降水量',
+                data: precData,
+                borderColor: 'blue',
+                borderWidth: 3,
+                fill: false,
+            }],
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    labels: {
+                        font: {
+                            size: 15
+                        }
+                    }
+                },
+                title: {
+                    display: true,
+                    text: '累積降水量(mm)の推移',
+                    font: {
+                        size: 20
+                    }
+                }
+            },
+            scales: {
+                x: { ...axisOptions, title: { text: '栽培期間' } },
+                y: { ...axisOptions, title: { text: '降水量' } },
+            },
+        },
+    });
+   
+    // 日照時間グラフ
+    const sunChartInstance = Chart.getChart('sunshineChart');
+    if (sunChartInstance) {
+        sunChartInstance.destroy();
+    }
+    const sunCtx = document.getElementById('sunshineChart').getContext('2d');
+    new Chart(sunCtx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: '有効日照時間',
+                data: sunData,
+                borderColor: 'green',
+                borderWidth: 3,
+                fill: false,
+            }],
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    labels: {
+                        font: {
+                            size: 15
+                        }
+                    }
+                },
+                title: {
+                    display: true,
+                    text: '有効日照時間(時間)の推移',
+                    font: {
+                        size: 20
+                    }
+                }
+            },
+            scales: {
+                x: { ...axisOptions, title: { text: '栽培期間' } },
+                y: { ...axisOptions, title: { text: '時間' } },
+            },
+        },
+    });
+}
+/*const chartOptions = {
+    responsive: true,
+    maintainAspectRatio: false, // 縦横比を固定せず調整可能にする
+};
+*/
+</script>
+</body>
+</html>
