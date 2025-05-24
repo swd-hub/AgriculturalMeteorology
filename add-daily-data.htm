@@ -5,7 +5,6 @@
     <meta name="auther" content="澤田泰人">
     <meta name="date" content="2025年5月4日">
     <meta charset="UTF-8">
-    <meta name="robots" content="noindex">
 <title>気象データ 日別値ファイル追加</title>
     <meta charset="UTF-8">
     <script src=" https://cdnjs.cloudflare.com/ajax/libs/encoding-japanese/2.0.0/encoding.min.js "></script>
@@ -56,6 +55,8 @@ h2 {
     <div id="drop-area" style="border: 2px dashed #ccc; padding: 20px; text-align: center;">
         ここに新旧２つのCSVファイルをドラッグ＆ドロップしてください
     </div>
+    <p>または、こちらからファイルを選択:</p>
+    <input type="file" id="fileInput" multiple accept=".csv">
 
     <h2>ドロップしたファイル名一覧:</h2>
     <ul id="fileList"></ul>
@@ -68,6 +69,16 @@ h2 {
     <button id="downloadButton">併合ファイルのダウンロード</button>
    
 <script>
+    // inputからファイル選択されたときの処理
+    const fileInput = document.getElementById("fileInput");
+    if (fileInput) {
+        fileInput.addEventListener("change", (event) => {
+            const files = event.target.files;
+            handleFileSelect(files);
+            displayFileNames(files);
+        });
+    }
+
 document.addEventListener("DOMContentLoaded", function() {
     const dropArea = document.getElementById("drop-area");
     const fileList = document.getElementById("fileList");
