@@ -183,6 +183,15 @@ input[type="date"], input[type="file"], input[type="number"] {
 </div>
 </div>
     <script>
+        Papa.parse(file, {
+  header: false,
+  skipEmptyLines: true,
+  complete: function(results) {
+    const rows = results.data;
+  window.csvData = rows; 
+  }
+});
+
 function updateMainTitle() {
     const startDate = document.getElementById("cultivationStartDate").value;
     const endDate = document.getElementById("cultivationEndDate").value;
