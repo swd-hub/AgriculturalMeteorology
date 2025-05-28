@@ -418,7 +418,7 @@ function parseCSV(content) {
     });
 }
 
-
+let data = [];  // ←追加  
 function handleFileSelect() {
     const file = document.getElementById("fileInput").files[0];
     if (!file) return;
