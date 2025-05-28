@@ -365,7 +365,7 @@ input:checked + .slider:before {
             link.click();
             document.body.removeChild(link);
         }
-
+let data = [];  // ←追加  
 function handleFileSelect() {
     const file = document.getElementById("fileInput").files[0];
     if (!file) return;
