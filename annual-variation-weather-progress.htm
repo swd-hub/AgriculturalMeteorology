@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta name="discription" content="気象データの日別値と平年値をグラフ化する。">  
+<meta name="auther" content="澤田泰人">
+<meta name="date" content="2025年5月4日">
+<meta charset="UTF-8">
+<title>気象経過</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Weather Data Visualizer</title>
+    <script src=" https://cdn.jsdelivr.net/npm/chart.js "></script>
+    <script src=" https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@latest "></script>
+    <style>
+/* 印刷用の設定 */
+@media print {
+  * {
+    margin: 0;
+    padding: 0;
+  }
+  input,
+  button,
+  select,
+  label,
+  form,
+  h5,
+  h3 {
+    display: none !important;
+  }
+}
+
+/* ボタンのスタイル */
+button {
+  background-color: #4CAF50;
+  color: white;
+  padding: 10px 20px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  text-align: right;
+}
+
+/* フォームのスタイル */
+form {
+  flex: 1;
+  margin: 20px;
+  padding: 40px;
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  width: 200px;
+}
+
+/* ヘッダーのスタイル */
+h1 {
+  background-color: #4CAF50;
+  color: white;
+  padding: 10px;
+  text-align: center;
+}
+
+/* ラベル内の input と button を横並びにする */
+label {
+  display: flex;
+  align-items: center;
+  gap: 8px; /* 間に少し余白 */
+}
+
+/* チャートの親要素 */
+.chart-container {
+  width: 100%;
+  max-width: 400px;  /* 最大幅を400pxに縮小 */
+  margin: 0 auto;    /* 中央寄せ（任意） */
+}
+/* キャンバス（グラフ） */
+canvas {
+  width: 100% !important;
+  height: auto !important;
+}
+
+/* フレックスレイアウトで要素を並べる */
+.container {
+  display: flex;
+  flex-wrap: wrap;       /* モバイルで折り返す */
+  gap: 20px;
+  justify-content: flex-start;  /* 左揃えにする */
+}
+
+/* 右寄せ */
+.right-align {
+  text-align: right;
+}
+
+/* テーブルとチャートの親要素 */
+.table-container, .chart-container {
+  flex: 1;
+  min-width: 300px;      /* 折り返し条件を調整 */
+}
+
+/* 入力フォームのスタイル */
+input[type="date"], input[type="file"], input[type="number"] {
+  width: 150px;
+  padding: 8px 10px;
+  font-size: 16px;
+  margin-bottom: 12px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+/* ボタンのスタイル */
+.GraphupdateButton {
+  background-color: #4CAF50;
+  color: white;
+  padding: 8px 12px;
+  font-size: 16px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-left: 4px; /* 任意で左に余白を追加 */
+}
+#fileInput{
+ width:500px;
+}
+#chartcanvas
+{
+  width: 80%;
+  height: auto;
+  padding: 10px;
+  position: absolute;
+  //left: 70px;
+  right: 100px;
+ // height: 200px;
+}
+    </style>
+    </head>
+<body>
+ 
+    <h1 id="mainTitle">気象経過</h1>
+
+    <div class="right-align">
+        <button onclick="window.open(' https://www.data.jma.go.jp/gmd/risk/obsdl/index.php ', '_blank')">気象庁のサイトを開く</button>
+        <!--button onclick="window.open('images/WetherOption.png', '_blank')">過去の気象データ・ダウンロードで選ぶ表示オプション</button-->
+    </div>
+    <br>
+    <h5>ファイルの選択ボタンにドラッグ＆ドロップすることで取り込み可能</h5>
+    <input type="file" id="fileInput" accept=".csv">
+    <div class="container">
+        <form>
+            <label for="cultivationStartDate">開始日:</label>
+            <input type="date" id="cultivationStartDate">
+            <label for="cultivationEndDate">終了日（最終日）:</label>
+            <input type="date"  id="cultivationEndDate">
+<!-- ファイル・日付を更新したあとに押すボタン -->
+<button type="button" id="updateButton" onclick="handleFileSelect()">データ更新</button>
+        </form>
+    </div>
+<div id="chartcanvas" style="margin-top: 5em; display: none;">
+<h3>日データ</h3>
+<div style="margin-bottom: 3em;">
+  <label>
+    縦軸最大値（気温）:
+    <input type="number" id="tempMax" value="40" step="5" placeholder="例: 40">
+  </label>
+  <button type="button" id="updateButton" class="GraphupdateButton" onclick="handleFileSelect()">グラフ更新</button>
+<canvas id="dailyTempChart"></canvas>
+</div>
+<div style="margin-bottom: 3em;">
+  <label>
+    縦軸最大値（降水量）:
+    <input type="number" id="precMax" value="100" step="10" placeholder="例: 100">
+  </label>
+    <button type="button" id="updateButton" class="GraphupdateButton" onclick="handleFileSelect()">グラフ更新</button>
+<canvas id="dailyPrecChart"></canvas>
+</div>
+<div style="margin-bottom: 3em;">
+  <label>
+    縦軸最大値（日照時間）観測を実施する地点のみ:
+    <input type="number" id="sunMax" value="16"  step="2" placeholder="例: 15">
+  </label>
+    <button type="button" id="updateButton" class="GraphupdateButton" onclick="handleFileSelect()">グラフ更新</button>
+<canvas id="dailySunChart"></canvas>
+</div>
+</div>
+    <script>
+function updateMainTitle() {
+    const startDate = document.getElementById("cultivationStartDate").value;
+    const endDate = document.getElementById("cultivationEndDate").value;
+    const fileInput = document.getElementById("fileInput");
+    const file = fileInput.files[0];
+
+    if (startDate && endDate && file) {
+        const startYear = new Date(startDate).getFullYear();
+        const endYear = new Date(endDate).getFullYear();
+        const filePrefix = file.name.substring(0, 2); // ファイル名の先頭2文字
+
+        const title = `${startYear}年-${endYear}年　気象経過（${filePrefix}）`;
+        document.getElementById("mainTitle").textContent = title;
+    }
+}
+
+// ファイル選択または日付変更後にタイトルを更新する
+document.getElementById("fileInput").addEventListener("change", updateMainTitle);
+document.getElementById("cultivationStartDate").addEventListener("change", updateMainTitle);
+document.getElementById("cultivationEndDate").addEventListener("change", updateMainTitle);
+   
+//日付自動
+     function updateDateFields() {
+ const currentDate = new Date();
+ const currentYear = currentDate.getFullYear();
+ const currentMonth = String(currentDate.getMonth() + 1).padStart(2, '0'); // Adds leading zero for single-digit months
+ const currentDay = String(currentDate.getDate()).padStart(2, '0'); // Adds leading zero for single-digit days
+
+ const startDateInput = document.getElementById('cultivationStartDate');
+ const endDateInput = document.getElementById('cultivationEndDate');
+
+ startDateInput.value = `${currentYear}-01-01`;
+ endDateInput.value = `${currentYear}-${currentMonth}-${currentDay}`;
+}
+
+
+    // ページ読み込み時に日付フィールドを更新
+    window.onload = updateDateFields;
+
+ let dailyTempChart, dailyPrecChart, dailySunChart;
+        let cumulativeTempChart, cumulativePrecChart, cumulativeSunChart;
+
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('fileInput').addEventListener('change', handleFileSelect, false);
+            document.getElementById('updateButton').addEventListener('click', handleFileSelect, false);
+        });
+
+        function shiftJISToUTF8(arrayBuffer) {
+            const decoder = new TextDecoder('shift-jis');
+            const uint8Array = new Uint8Array(arrayBuffer);
+            return decoder.decode(uint8Array);
+        }
+
+
+//CSVのクレンジング
+function parseCSV(content) {
+   const lines = content.trim().split('\n').filter(line => line.trim() !== "");
+
+console.log("lines:",lines);
+
+    // "数行のヘッダーを結合してcombinedHeadを作成
+    let lines1 = lines[2].split(',');
+    let lines2 = lines[3].split(',');
+    let lines3 = lines[4].split(',');
+
+    let combinedHead = [];
+    for (let i = 0; i < lines1.length; i++) {
+        combinedHead.push(lines1[i].replace(/\r/g, '') + lines2[i].replace(/\r/g, '') + lines3[i].replace(/\r/g, ''));
+    }
+   
+    // デバッグログ
+console.log("combinedHead",combinedHead);
+
+    const targetHeaders = ["年", "月", "日", "平均気温(℃)", "降水量の合計(mm)", "日照時間(時間)", "平均気温(℃)平年値(℃)", "降水量の合計(mm)平年値(mm)", "日照時間(時間)平年値(時間)", "最高気温(℃)", "最低気温(℃)", "最高気温(℃)平年値(℃)", "最低気温(℃)平年値(℃)"];
+    let indicesToSelect = targetHeaders.map(header =>
+    combinedHead.findIndex(h => h.includes(header)));
+
+
+    const dataLines = lines.slice(6).map(line => {   //5だった
+    const cols = line.split(',');
+    const selectedCols = indicesToSelect.map(index => index >= 0 ? cols[index] || '0' : '0'); // 存在しない場合はデフォルト値'0'
+
+       // console.log('Selected Columns:', selectedCols);
+        return selectedCols.join(',');
+    });
+
+    console.log('Data Lines:', dataLines);
+
+    // ヘッダー行を追加
+    dataLines.unshift(targetHeaders.join(','));
+
+    // デバッグログ
+    console.log('Data Lines with Header:', dataLines);
+
+    return dataLines.slice(1).map(line => { // ヘッダー行をスキップ
+        const cols = line.split(",");
+    return {
+        date: new Date(Date.UTC(cols[0], cols[1] - 1, cols[2])),
+        temperature: parseFloat(cols[3]) || 0,
+        precipitation: parseFloat(cols[4]) || 0,
+        sunshine: parseFloat(cols[5]) || 0,
+        avgTemperature: parseFloat(cols[6]) || 0,
+        avgPrecipitation: parseFloat(cols[7]) || 0,
+        avgSunshine: parseFloat(cols[8]) || 0,
+        maxTemperature: parseFloat(cols[9]) || 0,
+        minTemperature: parseFloat(cols[10]) || 0,
+        avgMaxTemperature: parseFloat(cols[11]) || 0,
+        avgMinTemperature: parseFloat(cols[12]) || 0
+    };
+});
+}
+
+
+function filterData(data, graphStart, graphEnd) {
+    return data.filter(d => d.date >= graphStart && d.date <= graphEnd);
+}
+
+//日データと平年値の整理
+function prepareComparisonData(data, startDate, endDate) {
+    const dailyMap = {};
+    const avgMap = {};
+
+    data.forEach(d => {
+        const dateKey = `${d.date.getMonth() + 1}-${d.date.getDate()}`;
+        
+        // 実測データ：栽培期間内だけ
+        if (d.date >= startDate && d.date <= endDate) {
+            dailyMap[dateKey] = {
+                temperature: d.temperature,
+                precipitation: d.precipitation,
+                sunshine: d.sunshine,
+                maxTemperature: d.maxTemperature,
+                minTemperature: d.minTemperature
+            };
+        }
+
+        // 平年値データ
+        if (d.avgTemperature !== null && !isNaN(d.avgTemperature)) {
+            avgMap[dateKey] = avgMap[dateKey] || {};
+            avgMap[dateKey].temperature = d.avgTemperature;
+        }
+        if (d.avgPrecipitation !== null && !isNaN(d.avgPrecipitation)) {
+            avgMap[dateKey] = avgMap[dateKey] || {};
+            avgMap[dateKey].precipitation = d.avgPrecipitation;
+        }
+        if (d.avgSunshine !== null && !isNaN(d.avgSunshine)) {
+            avgMap[dateKey] = avgMap[dateKey] || {};
+            avgMap[dateKey].sunshine = d.avgSunshine;
+        }
+        if (d.avgMaxTemperature !== null && !isNaN(d.avgMaxTemperature)) {
+            avgMap[dateKey] = avgMap[dateKey] || {};
+            avgMap[dateKey].maxTemperature = d.avgMaxTemperature;
+        }
+        if (d.avgMinTemperature !== null && !isNaN(d.avgMinTemperature)) {
+            avgMap[dateKey] = avgMap[dateKey] || {};
+            avgMap[dateKey].minTemperature = d.avgMinTemperature;
+        }
+    });
+
+    const labels = [];
+    const dailyTemps = [], avgTemps = [];
+    const dailyPrecs = [], avgPrecs = [];
+    const dailySuns = [], avgSuns = [];
+    const dailyMaxTemps = [], avgMaxTemps = [];
+    const dailyMinTemps = [], avgMinTemps = [];
+
+    const current = new Date(startDate);
+    const endCurrent = new Date(endDate);
+
+    while (current <= endCurrent) {
+        const yearTwoDigits = String(current.getFullYear()).slice(-2);
+        const md = `${yearTwoDigits}-${current.getMonth() + 1}-${current.getDate()}`;
+        labels.push(md);
+
+        const d = dailyMap[`${current.getMonth() + 1}-${current.getDate()}`];
+        const a = avgMap[`${current.getMonth() + 1}-${current.getDate()}`];
+
+        dailyTemps.push(d ? d.temperature : null);
+        avgTemps.push(a && a.temperature !== undefined ? a.temperature : null);
+        dailyPrecs.push(d ? d.precipitation : null);
+        avgPrecs.push(a && a.precipitation !== undefined ? a.precipitation : null);
+        dailySuns.push(d ? d.sunshine : null);
+        avgSuns.push(a && a.sunshine !== undefined ? a.sunshine : null);
+        dailyMaxTemps.push(d ? d.maxTemperature : null);
+        avgMaxTemps.push(a && a.maxTemperature !== undefined ? a.maxTemperature : null);
+        dailyMinTemps.push(d ? d.minTemperature : null);
+        avgMinTemps.push(a && a.minTemperature !== undefined ? a.minTemperature : null);
+
+        current.setDate(current.getDate() + 1);
+    }
+
+    return {
+        labels,
+        temperature: { daily: dailyTemps, avg: avgTemps },
+        precipitation: { daily: dailyPrecs, avg: avgPrecs },
+        sunshine: { daily: dailySuns, avg: avgSuns },
+        maxTemperature: { daily: dailyMaxTemps, avg: avgMaxTemps },
+        minTemperature: { daily: dailyMinTemps, avg: avgMinTemps }
+    };
+}
+        
+//グラフデータの抽出
+function handleFileSelect() {
+    const file = document.getElementById("fileInput").files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function (e) {
+        const utf8Content = shiftJISToUTF8(e.target.result);
+        const data = parseCSV(utf8Content);
+
+        console.log("data", data);
+
+        const startDate = new Date(document.getElementById("cultivationStartDate").value);
+        const endDate = new Date(document.getElementById("cultivationEndDate").value);
+
+        // 実測データの範囲を設定
+        const graphStart = new Date(startDate); // 開始日
+        const graphEnd = new Date(endDate); // 終了日
+
+        // 平年値の範囲：1年前から1年間
+        const avgStart = new Date(startDate);
+        avgStart.setFullYear(avgStart.getFullYear() - 1);
+        const avgEnd = new Date(avgStart);
+        avgEnd.setDate(avgEnd.getDate() + 364); // 365日分
+
+        // 実測値と平年値を両方含む範囲を計算
+        const minDate = Math.min(graphStart, avgStart);
+        const maxDate = Math.max(graphEnd, avgEnd);
+
+        // データをフィルタリング
+        const filteredData = filterData(data, minDate, maxDate);
+
+        // 栽培開始日を基準に平年値365日を作成し、終了日も考慮
+        const chartData = prepareComparisonData(filteredData, startDate, endDate); // 修正: ここで終了日を渡す
+        updateDailyCharts(chartData);
+        document.getElementById("chartcanvas").style.display = "block";
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+//グラフ描画
+function updateDailyCharts(chartData) {
+    const { labels, temperature, maxTemperature, minTemperature, precipitation, sunshine } = chartData;
+
+    let maxTempValue = parseFloat(document.getElementById('tempMax').value);
+    if (isNaN(maxTempValue)) maxTempValue = 40;
+
+    let maxPrecValue = parseFloat(document.getElementById('precMax').value);
+    if (isNaN(maxPrecValue)) maxPrecValue = 100;
+
+    let maxSunValue = parseFloat(document.getElementById('sunMax').value);
+    if (isNaN(maxSunValue)) maxSunValue = 16;
+
+    const createChart = (ctx, type, labels, datasets, yMax) => {
+        return new Chart(ctx, {
+            type: type,
+            data: { labels, datasets },
+            options: {
+                layout: { padding: { left: 20, right: 20, top: 20, bottom: 20 } },
+                plugins: {
+                    legend: { labels: { font: { size: 30 } } }
+                },
+                scales: {
+                    x: {
+                        ticks: { font: { size: 28 } },
+                        title: {
+                            display: true,
+                            text: '年の下2桁-月-日',  // 変更されたラベル
+                            font: { size: 30 }
+                        }
+                    },
+                    y: {
+                        ticks: { font: { size: 28 } },
+                        title: {
+                            display: true,
+                            text: '',
+                            font: { size: 30 }
+                        },
+                        suggestedMax: yMax
+                    }
+                }
+            }
+        });
+    };
+
+    // 気温チャート（6系列に拡張）
+    if (dailyTempChart) dailyTempChart.destroy();
+    dailyTempChart = createChart(
+        document.getElementById('dailyTempChart').getContext('2d'),
+        'line', labels,
+        [
+            {
+                label: '日々の平均気温(℃)',
+                data: temperature.daily,
+                borderColor: 'rgba(255, 165, 0, 1)',
+                borderWidth: 3,
+                fill: false
+            },
+            {
+                label: '平年値気温(℃)',
+                data: temperature.avg,
+                borderColor: 'rgba(255, 165, 0, 0.5)',
+                borderDash: [5, 5],
+                borderWidth: 2,
+                fill: false
+            },
+            {
+                label: '日々の最高気温(℃)',
+                data: maxTemperature.daily,
+                borderColor: 'rgba(255, 99, 132, 1)',
+                borderWidth: 3,
+                fill: false
+            },
+            {
+                label: '平年値最高気温(℃)',
+                data: maxTemperature.avg,
+                borderColor: 'rgba(255, 99, 132, 0.5)',
+                borderDash: [5, 5],
+                borderWidth: 2,
+                fill: false
+            },
+            {
+                label: '日々の最低気温(℃)',
+                data: minTemperature.daily,
+                borderColor: 'rgba(54, 162, 235, 1)',
+                borderWidth: 3,
+                fill: false
+            },
+            {
+                label: '平年値最低気温(℃)',
+                data: minTemperature.avg,
+                borderColor: 'rgba(54, 162, 235, 0.5)',
+                borderDash: [5, 5],
+                borderWidth: 2,
+                fill: false
+            }
+        ],
+        maxTempValue
+    );
+
+    // 降水量チャート（変更なし）
+    if (dailyPrecChart) dailyPrecChart.destroy();
+    dailyPrecChart = createChart(
+        document.getElementById('dailyPrecChart').getContext('2d'),
+        'bar', labels,
+        [
+            {
+                label: '日々の降水量(mm)',
+                data: precipitation.daily,
+                backgroundColor: 'rgba(54, 162, 235, 1)',
+                maxBarThickness: 10
+            },
+            {
+                label: '平年値降水量(mm)',
+                data: precipitation.avg,
+                type: 'line',
+                borderColor: 'rgba(100, 100, 100, 1)',
+                borderDash: [4, 4],
+                borderWidth: 2,
+                fill: false
+            }
+        ],
+        maxPrecValue
+    );
+
+    // 日照時間チャート（変更なし）
+    if (dailySunChart) dailySunChart.destroy();
+    dailySunChart = createChart(
+        document.getElementById('dailySunChart').getContext('2d'),
+        'bar', labels,
+        [
+            {
+                label: '日々の日照時間(時間)',
+                data: sunshine.daily,
+                backgroundColor: 'rgba(255, 206, 86, 1)',
+                maxBarThickness: 10
+            },
+            {
+                label: '平年値日照時間(時間)',
+                data: sunshine.avg,
+                type: 'line',
+                borderColor: 'rgba(150, 150, 150, 1)',
+                borderDash: [4, 4],
+                borderWidth: 2,
+                fill: false
+            }
+        ],
+        maxSunValue
+    );
+}
+     </script>
+
+</body>
+</html>
