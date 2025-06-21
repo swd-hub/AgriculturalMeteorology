@@ -5,9 +5,10 @@
     <meta name="auther" content="澤田泰人">
     <meta name="date" content="2025年5月4日">
     <meta charset="UTF-8">
-　　<meta name="robots" content="noindex">
 <title>気象データ 日別値ファイル追加</title>
+    <meta charset="UTF-8">
     <script src=" https://cdnjs.cloudflare.com/ajax/libs/encoding-japanese/2.0.0/encoding.min.js "></script>
+
     </head>
     <style>
 /* 画面表示用スタイル */
@@ -68,257 +69,235 @@ h2 {
     <button id="downloadButton">併合ファイルのダウンロード</button>
    
 <script>
-    // inputからファイル選択されたときの処理
-    const fileInput = document.getElementById("fileInput");
-    if (fileInput) {
-        fileInput.addEventListener("change", (event) => {
-            const files = event.target.files;
-            handleFileSelect(files);
-            displayFileNames(files);
-        });
+    // CSVファイルの内容を格納する配列（グローバルで一度だけ宣言）
+    let fileContents = [];
+    let droppedFileNames = [];
+    let headers = [];
+    let allDataLines = [];
+
+    // Shift-JISをUTF-8に変換
+    function shiftJISToUTF8(arrayBuffer) {
+        const decoder = new TextDecoder("shift-jis");
+        return decoder.decode(new Uint8Array(arrayBuffer));
     }
 
-document.addEventListener("DOMContentLoaded", function() {
-    const dropArea = document.getElementById("drop-area");
-    const fileList = document.getElementById("fileList");
+    // CSVのクレンジングと再構成
+    function reorderCSVContent(lines) {
+        const cleanedLines = lines.filter(line => line.trim() !== "" || line.includes("\r"));
 
-    dropArea.addEventListener("dragover", (event) => {
-        event.preventDefault(); // デフォルトの動作を無効化
-        dropArea.style.backgroundColor = "#f0f0f0"; // ハイライト
-    });
+        const headerLines = cleanedLines.slice(0, 6); // ヘッダーは6行保持
+        const dataLines = cleanedLines.slice(6); // 7行目以降がデータ
 
-    dropArea.addEventListener("dragleave", () => {
-        dropArea.style.backgroundColor = ""; // 元に戻す
-    });
+        const lines1 = headerLines[2].split(',');
+        const lines2 = headerLines[3].split(',');
+        const lines3 = headerLines[4].split(',');
 
-    dropArea.addEventListener("drop", (event) => {
-        event.preventDefault(); // デフォルトの動作を無効化
-        dropArea.style.backgroundColor = ""; // 元に戻す
-        const files = event.dataTransfer.files;
-        handleFileSelect(files);
-        displayFileNames(files); // ドロップしたファイル名を表示
-    });
+        const combinedHead = lines1.map((l1, i) =>
+            (l1.replace(/\r/g, '') + (lines2[i] || '').replace(/\r/g, '') + (lines3[i] || '').replace(/\r/g, ''))
+        );
 
-// ボタンがクリックされたときの処理
-document.getElementById('mergeButton').addEventListener('click', function() {
-    // データの追加と表示の処理
-        mergeAndPreviewCSV();
-       // scrollToPreview(); // プレビューにスクロール
-});
+        const targetHeaders = [
+            "年", "月", "日", "平均気温(℃)", "平均気温(℃)品質情報", "平均気温(℃)均質番号", "平均気温(℃)平年値(℃)",
+            "平均気温(℃)平年値(℃)品質情報", "降水量の合計(mm)", "降水量の合計(mm)品質情報", "降水量の合計(mm)均質番号",
+            "降水量の合計(mm)平年値(mm)", "降水量の合計(mm)平年値(mm)品質情報", "日照時間(時間)", "日照時間(時間)品質情報",
+            "日照時間(時間)均質番号", "日照時間(時間)平年値(時間)", "日照時間(時間)平年値(時間)品質情報",
+            "最高気温(℃)", "最高気温(℃)品質情報", "最高気温(℃)均質番号", "最高気温(℃)平年値(℃)",
+            "最高気温(℃)平年値(℃)品質情報", "最低気温(℃)", "最低気温(℃)品質情報", "最低気温(℃)均質番号",
+            "最低気温(℃)平年値(℃)", "最低気温(℃)平年値(℃)品質情報"
+        ];
 
-    document.getElementById("downloadButton").addEventListener("click", downloadEditedCSV);
-   
-});
+        const indicesToSelect = targetHeaders.map(header => {
+            const index = combinedHead.findIndex(h => h.includes(header));
+            if (index === -1) {
+                console.log(`一致しないヘッダー: ${header}`);
+            }
+            return index;
+        });
 
-// CSVファイルの内容を格納する配列（グローバルで一度だけ宣言）
-let fileContents = [];
-let droppedFileNames = [];
+        const reorderedLines = dataLines.map((line) => {
+            const cols = line.split(/,(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)/);
+            const reordered = indicesToSelect.map(index => (index >= 0 ? cols[index] || '0' : '0')).join(",");
+            return reordered;
+        });
 
-
-// Shift-JISをUTF-8に変換
-function shiftJISToUTF8(arrayBuffer) {
-    const decoder = new TextDecoder("shift-jis");
-    return decoder.decode(new Uint8Array(arrayBuffer));
-}
-
-// CSVのクレンジング
-function reorderCSVContent(lines) {
-//const cleanedLines = lines.filter(line => line.trim() !== "");
-//const cleanedLines = lines.map(line => line.replace(/[^\S\r]/g, ''));
-const cleanedLines = lines.filter(line => line.trim() !== "" || line.includes("\r"));
-
-
-    const headerLines = cleanedLines.slice(0, 6); // ヘッダーは6行保持
-    const dataLines = cleanedLines.slice(6); // 7行目以降がデータ
-   
-console.log("headerLines",headerLines);
-
-    // ヘッダー結合処理（必要に応じて）
-    const lines1 = headerLines[2].split(',');//2
-    const lines2 = headerLines[3].split(',');
-    const lines3 = headerLines[4].split(',');
-
-    const combinedHead = lines1.map((l1, i) =>
-        (l1.replace(/\r/g, '') + (lines2[i] || '').replace(/\r/g, '') + (lines3[i] || '').replace(/\r/g, ''))
-    );
-
-console.log("combinedHead",combinedHead);
-
-    const targetHeaders = [
-        "年", "月", "日", "平均気温(℃)", "平均気温(℃)品質情報", "平均気温(℃)均質番号", "平均気温(℃)平年値(℃)",
-        "平均気温(℃)平年値(℃)品質情報", "降水量の合計(mm)", "降水量の合計(mm)品質情報", "降水量の合計(mm)均質番号",
-        "降水量の合計(mm)平年値(mm)", "降水量の合計(mm)平年値(mm)品質情報", "日照時間(時間)", "日照時間(時間)品質情報",
-        "日照時間(時間)均質番号", "日照時間(時間)平年値(時間)", "日照時間(時間)平年値(時間)品質情報",
-        "最高気温(℃)", "最高気温(℃)品質情報", "最高気温(℃)均質番号", "最高気温(℃)平年値(℃)",
-        "最高気温(℃)平年値(℃)品質情報", "最低気温(℃)", "最低気温(℃)品質情報", "最低気温(℃)均質番号",
-        "最低気温(℃)平年値(℃)", "最低気温(℃)平年値(℃)品質情報"
-    ];
-
-    const indicesToSelect = targetHeaders.map(header => {
-        const index = combinedHead.findIndex(h => h.includes(header));
-        if (index === -1) {
-            console.log(`一致しないヘッダー: ${header}`);
-        }
-        return index;
-    });
-
-    const reorderedLines = dataLines.map((line) => {
-        const cols = line.split(/,(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)/);
-        const reordered = indicesToSelect.map(index => (index >= 0 ? cols[index] || '0' : '0')).join(",");
-        return reordered;
-    });
-
-
-    return [...headerLines, ...reorderedLines];
-}
-
-let headers = [];
-let allDataLines = [];
-
+        return [...headerLines, ...reorderedLines];
+    }
 
 async function handleFileSelect(files) {
     if (files.length === 0) return;
 
+    const localHeadersList = [];
+
     for (const file of files) {
         const content = await file.arrayBuffer();
-       
         const utf8Content = shiftJISToUTF8(content);
         const lines = utf8Content.replace(/\r\n|\r/g, "\n").split("\n");
-       
+
         const reordered = reorderCSVContent(lines);
 
-        // ファイル名に "data" が含まれない場合にヘッダーを採用
+        // メタ情報（1行目）を除いた部分を比較用に保存
+        const headerPart = reordered.slice(1, 5);  // 2〜5行目
+        
+        console.log("headerPart", headerPart);
+        
+        localHeadersList.push(headerPart.join("\n").trim());
+
+        // 1ファイル目で表示用ヘッダーを保存（メタ情報含む）
         if (headers.length === 0 && !file.name.includes("data")) {
-            headers = reordered.slice(0, 6); // 最初の6行をヘッダーとして保存
+            headers = reordered.slice(0, 6);  // 表示用には1〜6行目保持
         }
-       
-        // データ行を追加
+
         allDataLines.push(...reordered.slice(6));
     }
-}
 
-// #downloadButtonが存在する場合にイベントを追加
-document.addEventListener("DOMContentLoaded", function() {
-    const downloadButton = document.getElementById("downloadButton");
-    if (downloadButton) {
-        downloadButton.addEventListener("click", downloadEditedCSV);
-    } else {
-        console.error("#downloadButtonが見つかりません");
-    }
-});
-
-function mergeAndPreviewCSV() {
-    const uniqueDataMap = new Map();
-
-    allDataLines.forEach(line => {
-        const [year, month, day] = line.split(",");
-        const dateKey = `${year}-${month}-${day}`;
-
-        if (!uniqueDataMap.has(dateKey)) {
-            uniqueDataMap.set(dateKey, line);
+    if (localHeadersList.length >= 2) {
+        const [header1, header2] = localHeadersList;
+        if (header1 !== header2) {
+            alert("⚠ ヘッダーが一致していません。異なる形式のCSVファイルです。");
         }
-    });
+    }
+} // ← ここが補完された閉じカッコ
 
-    const sortedData = Array.from(uniqueDataMap.entries()).sort((a, b) => {
-        return new Date(a[0]) - new Date(b[0]);
-    });
+    function mergeAndPreviewCSV() {
+        const uniqueDataMap = new Map();
 
-    const previewElement = document.getElementById("mergedPreview");
-    if (previewElement) {
-        previewElement.textContent = [...headers, ...sortedData.map(item => item[1])].join("\n");
+        allDataLines.forEach(line => {
+            const [year, month, day] = line.split(",");
+            const dateKey = `${year}-${month}-${day}`;
+
+            if (!uniqueDataMap.has(dateKey)) {
+                uniqueDataMap.set(dateKey, line);
+            }
+        });
+
+        const sortedData = Array.from(uniqueDataMap.entries()).sort((a, b) => {
+            return new Date(a[0]) - new Date(b[0]);
+        });
+
+        const previewElement = document.getElementById("mergedPreview");
+        if (previewElement) {
+            previewElement.textContent = [...headers, ...sortedData.map(item => item[1])].join("\n");
+        }
+
+        if (sortedData.length > 0) {
+            const fileName = createSaveFileName(headers, sortedData.map(item => item[1]));
+            const downloadButton = document.getElementById("downloadButton");
+            if (downloadButton) {
+                downloadButton.setAttribute('data-filename', fileName);
+            }
+        }
+
+        scrollToPreview();
     }
 
-    if (sortedData.length > 0) {
-        const fileName = createSaveFileName(headers, sortedData.map(item => item[1]));
+    function createSaveFileName(headers, dataLines) {
+        const secondHeaderLine = headers[1] || "";
+        const words = secondHeaderLine.split(",");
+        const firstChar = words[3] || "デフォルト";
 
-        // downloadButtonに保存ファイル名をセット
+        const dates = dataLines.map(line => {
+            const columns = line.split(",");
+            const [year, month, day] = columns;
+            return new Date(year, month - 1, day);
+        });
+
+        const latestDate = new Date(Math.max(...dates));
+        const yyyy = latestDate.getFullYear();
+        const mm = String(latestDate.getMonth() + 1).padStart(2, '0');
+        const dd = String(latestDate.getDate()).padStart(2, '0');
+        const formattedDate = `${yyyy}-${mm}-${dd}`;
+
+        return `${firstChar}日別値${formattedDate}.csv`;
+    }
+
+    function downloadEditedCSV() {
+        const previewElement = document.getElementById("mergedPreview");
+        if (!previewElement) {
+            console.error("プレビューエリアが見つかりません");
+            return;
+        }
+
+        const editedContent = previewElement.textContent;
+
+        const unicodeArray = Encoding.stringToCode(editedContent);
+        const sjisArray = Encoding.convert(unicodeArray, {
+            from: 'UNICODE',
+            to: 'SJIS',
+            type: 'array'
+        });
+        const uint8Array = new Uint8Array(sjisArray);
+
+        const blob = new Blob([uint8Array], { type: "text/csv;charset=shift-jis;" });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+
+        const downloadButton = document.getElementById("downloadButton");
+        const filename = downloadButton ? downloadButton.getAttribute('data-filename') || "merged_data.csv" : "merged_data.csv";
+
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+
+    function displayFileNames(files) {
+        const fileList = document.getElementById("fileList");
+        for (const file of files) {
+            const listItem = document.createElement("li");
+            listItem.textContent = file.name;
+            fileList.appendChild(listItem);
+        }
+    }
+
+    function scrollToPreview() {
+        const previewElement = document.getElementById('mergedPreview');
+        if (previewElement) {
+            previewElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+    }
+
+    // 初期イベント設定
+    document.addEventListener("DOMContentLoaded", function () {
+        const dropArea = document.getElementById("drop-area");
+
+        dropArea.addEventListener("dragover", (event) => {
+            event.preventDefault();
+            dropArea.style.backgroundColor = "#f0f0f0";
+        });
+
+        dropArea.addEventListener("dragleave", () => {
+            dropArea.style.backgroundColor = "";
+        });
+
+        dropArea.addEventListener("drop", (event) => {
+            event.preventDefault();
+            dropArea.style.backgroundColor = "";
+            const files = event.dataTransfer.files;
+            handleFileSelect(files);
+            displayFileNames(files);
+        });
+
+        const fileInput = document.getElementById("fileInput");
+        if (fileInput) {
+            fileInput.addEventListener("change", (event) => {
+                const files = event.target.files;
+                handleFileSelect(files);
+                displayFileNames(files);
+            });
+        }
+
+        const mergeButton = document.getElementById('mergeButton');
+        if (mergeButton) {
+            mergeButton.addEventListener('click', mergeAndPreviewCSV);
+        }
+
         const downloadButton = document.getElementById("downloadButton");
         if (downloadButton) {
-            downloadButton.setAttribute('data-filename', fileName);
+            downloadButton.addEventListener("click", downloadEditedCSV);
         }
-
-        console.log("生成した保存ファイル名:", fileName);
-    }
-    scrollToPreview();
-}
-
-function createSaveFileName(headers, dataLines) {
-    // ヘッダー2行目の最初の文字を取得
-    const secondHeaderLine = headers[1] || "";
-    const words = secondHeaderLine.split(",");
-    const firstChar = words[3] || "デフォルト";
-
-    // 日付を探す（データ部分から年,月,日を取る）
-    const dates = dataLines.map(line => {
-        const columns = line.split(",");
-        const [year, month, day] = columns;
-        return new Date(year, month - 1, day);
     });
-
-    // 最も新しい日付を取得
-    const latestDate = new Date(Math.max(...dates));
-   
-    // yyyy-mm-dd形式にフォーマット
-    const yyyy = latestDate.getFullYear();
-    const mm = String(latestDate.getMonth() + 1).padStart(2, '0');
-    const dd = String(latestDate.getDate()).padStart(2, '0');
-    const formattedDate = `${yyyy}-${mm}-${dd}`;
-
-    // ファイル名を組み立てる
-    return `${firstChar}日別値${formattedDate}.csv`;
-}
-
-function downloadEditedCSV() {
-    const previewElement = document.getElementById("mergedPreview");
-    if (!previewElement) {
-        console.error("プレビューエリアが見つかりません");
-        return;
-    }
-
-    const editedContent = previewElement.textContent;
-
-    // 正しいShift-JISエンコード（Encoding.jsを使う）
-    const unicodeArray = Encoding.stringToCode(editedContent);  // Unicode配列に変換
-    const sjisArray = Encoding.convert(unicodeArray, {
-        from: 'UNICODE',
-        to: 'SJIS',
-        type: 'array'
-    });
-    const uint8Array = new Uint8Array(sjisArray); // バイナリ配列に変換
-
-    const blob = new Blob([uint8Array], { type: "text/csv;charset=shift-jis;" });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-
-    const downloadButton = document.getElementById("downloadButton");
-    const filename = downloadButton ? downloadButton.getAttribute('data-filename') || "merged_data.csv" : "merged_data.csv";
-
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-}
-
-
-function displayFileNames(files) {
-    const fileList = document.getElementById("fileList");
-    // innerHTMLをクリアしない！追記していく
-    for (const file of files) {
-        const listItem = document.createElement("li");
-        listItem.textContent = file.name ;
-        fileList.appendChild(listItem);  // 追加するだけ
-    }
-}
-
-function scrollToPreview() {
-    const previewElement = document.getElementById('mergedPreview');
-    if (previewElement) {
-        previewElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    } else {
-        console.log('プレビュー要素が見つかりません');
-    }
-}
 </script>
+
 </body>
 
 
