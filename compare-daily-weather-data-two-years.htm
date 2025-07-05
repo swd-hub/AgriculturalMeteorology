@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta name="description" content="気象データを用いて日別値の平均気温、降水量合計、日照時間を２年分グラフ化して比較する。">  
+    <meta name="author" content="澤田泰人">
+    <meta name="date" content="2025年7月5日">
+    <meta charset="UTF-8">
+    <title>日別気象値の年次比較</title>
+    <meta name="robots" content="noindex">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+body {
+  font-family: sans-serif;
+  margin: 20px;
+}
+button {
+  background-color: #4CAF50;
+  color: white;
+  padding: 10px 20px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-right: 10px;
+}
+h1 {
+  background-color: #4CAF50;
+  color: white;
+  padding: 10px;
+  text-align: center;
+}
+h2 {
+  background-color: #4CAF50;
+  color: white;
+  padding: 10px;
+  text-align: left;
+}
+h5 {
+  margin-bottom: 10px;
+}
+label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: bold;
+}
+.top-row-container {
+  display: flex;
+  gap: 20px;
+  margin-bottom: 20px;
+  align-items: flex-start;
+}
+.input-form {
+  flex: 0 0 30%;
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  padding: 20px;
+}
+.results-container {
+  flex: 1;
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  padding: 20px;
+}
+.bottom-row-container {
+  display: flex;
+  gap: 20px;
+  width: 100%;
+  align-items: flex-start;
+}
+.charts-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  width: 800px;
+}
+.chart-container canvas {
+  width: 100%;
+  height: 350px;
+}
+#ssDataTable {
+  width: 100%;
+  font-size: 16px;
+  margin: 10px 0;
+  border-collapse: collapse;
+  border: 1px solid black;
+}
+#ssDataTable td, #ssDataTable th {
+  border: 1px solid black;
+  padding: 8px;
+  text-align: left;
+}
+    </style>
+</head>
+<body>
+    <h1>日別気象値の年次比較</h1>
+    <div class="right-align">
+        <button onclick="window.open('https://www.data.jma.go.jp/gmd/risk/obsdl/index.php', '_blank')">気象庁のサイトを開く</button>
+    </div>
+    <br>
+    <h5>ファイルの選択ボタンにドラッグ＆ドロップすることで取り込み可能</h5>
+    <input type="file" id="fileInput" accept=".csv">
+
+    <div class="top-row-container">
+        <form class="input-form">
+            <h2>条件入力</h2>
+            <label for="startDate">比較開始日:</label>
+            <input type="date" id="startDate"><br><br>
+            <label for="endDate">比較終了日:</label>
+            <input type="date" id="endDate"><br><br>
+            <label for="compareYear">比較年（デフォルト前年）</label>
+            <input type="number" id="compareYear"><br><br>
+            <button type="button" id="updateButton">データ更新</button>
+        </form>
+        <div class="results-container">
+            <h2>集計結果</h2>
+            <table id="summaryTable"></table>
+        </div>
+    </div>
+
+    <div class="bottom-row-container">
+        <div style="flex:0 0 35%;">
+            <h2>SS（日ごと値の偏差平方和）</h2>
+            <table id="ssDataTable">
+                <thead>
+                    <tr>
+                        <th>比較年</th>
+                        <th>気温 SS</th>
+                        <th>降水量 SS</th>
+                        <th>日照時間 SS</th>
+                        <th>比較日数</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+        <div class="charts-container">
+            <div class="chart-container">
+                <canvas id="tempChart"></canvas>
+            </div>
+            <div class="chart-container">
+                <canvas id="precChart"></canvas>
+            </div>
+            <div class="chart-container">
+                <canvas id="sunChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+<script>
+function updateDateFields() {
+ const currentDate = new Date();
+ const yyyy = currentDate.getFullYear();
+ const mm = String(currentDate.getMonth() + 1).padStart(2, '0');
+ const dd = String(currentDate.getDate()).padStart(2, '0');
+ document.getElementById('startDate').value = `${yyyy}-01-01`;
+ document.getElementById('endDate').value = `${yyyy}-${mm}-${dd}`;
+ document.getElementById('compareYear').value = yyyy - 1;
+}
+window.onload = updateDateFields;
+
+let tempChart, precChart, sunChart;
+
+document.addEventListener('DOMContentLoaded', function() {
+    document.getElementById('fileInput').addEventListener('change', handleFileSelect, false);
+    document.getElementById('updateButton').addEventListener('click', handleFileSelect, false);
+});
+
+function readCSVFile(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsArrayBuffer(file);
+    });
+}
+
+function shiftJISToUTF8(arrayBuffer) {
+    const decoder = new TextDecoder('shift-jis');
+    const uint8Array = new Uint8Array(arrayBuffer);
+    return decoder.decode(uint8Array);
+}
+
+function parseCSV(content) {
+   const lines = content.trim().split('\n').filter(line => line.trim() !== "");
+   // ヘッダー結合
+   let lines1 = lines[2].split(',');
+   let lines2 = lines[3].split(',');
+   let lines3 = lines[4].split(',');
+   let combinedHead = [];
+   for (let i = 0; i < lines1.length; i++) {
+       combinedHead.push(lines1[i].replace(/\r/g, '') + lines2[i].replace(/\r/g, '') + lines3[i].replace(/\r/g, ''));
+   }
+   const targetHeaders = ["年", "月", "日", "平均気温(℃)", "降水量の合計(mm)", "日照時間(時間)"];
+   let indicesToSelect = targetHeaders.map(header => combinedHead.indexOf(header));
+   // データ行を処理
+   const dataLines = lines.slice(6).map(line => {
+       const cols = line.split(',');
+       const selectedCols = indicesToSelect.map(index => index >= 0 ? cols[index] || '0' : '0');
+       return selectedCols.join(',');
+   });
+   dataLines.unshift(targetHeaders.join(','));
+   return dataLines.slice(1).map(line => {
+       const cols = line.split(",");
+       return {
+           date: new Date(Date.UTC(cols[0], cols[1] - 1, cols[2])),
+           temperature: parseFloat(cols[3]) || 0,
+           precipitation: parseFloat(cols[4]) || 0,
+           sunshine: parseFloat(cols[5]) || 0
+       };
+   });
+}
+
+function filterData(data, start, end) {
+    return data.filter(d => {
+        const itemDate = new Date(d.date);
+        return itemDate >= new Date(start) && itemDate <= new Date(end);
+    });
+}
+
+function calculateDailyData(data, startDate, endDate) {
+    let daily = { dates: [], temperature: [], precipitation: [], sunshine: [] };
+    data.forEach(entry => {
+        const date = new Date(entry.date);
+        if (date >= startDate && date <= endDate) {
+            daily.dates.push(date.toISOString().split('T')[0]);
+            daily.temperature.push(entry.temperature);
+            daily.precipitation.push(entry.precipitation);
+            daily.sunshine.push(entry.sunshine);
+        }
+    });
+    return daily;
+}
+
+function updateSummaryTable(baseData, compareData, baseYear, compareYear) {
+    const table = document.getElementById("summaryTable");
+    table.innerHTML = "";
+    const rows = [
+        { label: "対象年", b: baseYear, c: compareYear },
+        { label: "日数", b: baseData.dates.length, c: compareData.dates.length },
+        { label: "平均気温", b: avg(baseData.temperature), c: avg(compareData.temperature) },
+        { label: "降水量合計", b: sum(baseData.precipitation), c: sum(compareData.precipitation) },
+        { label: "日照時間合計", b: sum(baseData.sunshine), c: sum(compareData.sunshine) }
+    ];
+    rows.forEach(row => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td>${row.label}</td><td>${row.b}</td><td>${row.c}</td>`;
+        table.appendChild(tr);
+    });
+}
+function avg(arr) {
+    if (!arr.length) return '-';
+    return (arr.reduce((a,b)=>a+b,0)/arr.length).toFixed(1);
+}
+function sum(arr) {
+    return arr.reduce((a,b)=>a+b,0).toFixed(1);
+}
+
+function handleFileSelect() {
+    const file = document.getElementById("fileInput").files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function (e) {
+        const utf8Content = shiftJISToUTF8(e.target.result);
+        const data = parseCSV(utf8Content);
+
+        const startDate = new Date(document.getElementById("startDate").value);
+        const endDate = new Date(document.getElementById("endDate").value);
+        const compareYear = parseInt(document.getElementById("compareYear").value, 10);
+
+        // 比較年の開始日・終了日
+        const compareStart = new Date(startDate);
+        compareStart.setFullYear(compareYear);
+        const compareEnd = new Date(endDate);
+        compareEnd.setFullYear(compareYear);
+
+        // データ抽出
+        const baseData = filterData(data, startDate, endDate);
+        const compareData = filterData(data, compareStart, compareEnd);
+
+        // 各年の日ごとの値を
+        const dailyBase = calculateDailyData(baseData, startDate, endDate);
+        const dailyCompareRaw = calculateDailyData(compareData, compareStart, compareEnd);
+
+        // 比較年データを基準年と同じ日付並びに揃える
+        const normalizedCompareData = {
+            dates: dailyBase.dates.slice(),
+            temperature: [],
+            precipitation: [],
+            sunshine: []
+        };
+        for (let i = 0; i < dailyBase.dates.length; i++) {
+            normalizedCompareData.temperature.push(dailyCompareRaw.temperature[i] ?? null);
+            normalizedCompareData.precipitation.push(dailyCompareRaw.precipitation[i] ?? null);
+            normalizedCompareData.sunshine.push(dailyCompareRaw.sunshine[i] ?? null);
+        }
+
+        // グラフ
+        updateCharts(dailyBase, normalizedCompareData, startDate.getFullYear(), compareYear);
+        updateSummaryTable(dailyBase, normalizedCompareData, startDate.getFullYear(), compareYear);
+        calculateAndUpdateSS(data, startDate, endDate, dailyBase);
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+function updateCharts(base, compare, baseYear, compareYear) {
+    const labels = base.dates.map(date => {
+        const d = new Date(date);
+        return `${d.getMonth()+1}/${d.getDate()}`;
+    });
+    function createChart(ctx, label, bData, cData, color1, color2) {
+        return new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels,
+                datasets: [
+                    {
+                        label: `${baseYear}年 (${label})`,
+                        data: bData,
+                        borderColor: color1,
+                        borderWidth: 3,
+                        fill: false
+                    },
+                    {
+                        label: `${compareYear}年 (${label})`,
+                        data: cData,
+                        borderColor: color2,
+                        borderWidth: 3,
+                        fill: false,
+                        borderDash: [5, 5]
+                    }
+                ]
+            },
+            options: {
+                plugins: {
+                    legend: { labels: { font: { size: 16 } } }
+                },
+                scales: {
+                    x: {
+                        ticks: { font: { size: 12 } },
+                        title: { display: true, text: '日付', font: { size: 14 } }
+                    },
+                    y: {
+                        ticks: { font: { size: 12 } },
+                        title: { display: true, text: '', font: { size: 14 } }
+                    }
+                }
+            }
+        });
+    }
+    if (tempChart) tempChart.destroy();
+    tempChart = createChart(document.getElementById('tempChart').getContext('2d'), "平均気温(℃)", base.temperature, compare.temperature, "rgba(75,192,192,1)", "rgba(255,99,132,1)");
+    if (precChart) precChart.destroy();
+    precChart = createChart(document.getElementById('precChart').getContext('2d'), "降水量合計(mm)", base.precipitation, compare.precipitation, "rgba(54,162,235,1)", "rgba(255,159,64,1)");
+    if (sunChart) sunChart.destroy();
+    sunChart = createChart(document.getElementById('sunChart').getContext('2d'), "日照時間(時間)", base.sunshine, compare.sunshine, "rgba(255,206,86,1)", "rgba(153,102,255,1)");
+}
+
+function calculateSeriesSS(base, compare) {
+    let ss = 0;
+    for (let i = 0; i < base.length && i < compare.length; i++) {
+        const diff = (base[i]??0) - (compare[i]??0);
+        ss += diff * diff;
+    }
+    return ss;
+}
+
+function calculateAndUpdateSS(data, startDate, endDate, baseDaily) {
+    const baseYear = startDate.getFullYear();
+    let years = [...new Set(data.map(entry => new Date(entry.date).getFullYear()))];
+    let ssResults = [];
+    years.forEach(compareYear => {
+        if(compareYear === baseYear) return;
+        const compareStart = new Date(startDate); compareStart.setFullYear(compareYear);
+        const compareEnd = new Date(endDate); compareEnd.setFullYear(compareYear);
+        const compareData = filterData(data, compareStart, compareEnd);
+        const dailyCompare = calculateDailyData(compareData, compareStart, compareEnd);
+        // 基準年と日付を揃える
+        const normCompare = {
+            temperature: [],
+            precipitation: [],
+            sunshine: []
+        };
+        for (let i = 0; i < baseDaily.dates.length; i++) {
+            normCompare.temperature.push(dailyCompare.temperature[i] ?? null);
+            normCompare.precipitation.push(dailyCompare.precipitation[i] ?? null);
+            normCompare.sunshine.push(dailyCompare.sunshine[i] ?? null);
+        }
+        ssResults.push({
+            year: compareYear,
+            tempSS: Math.round(calculateSeriesSS(baseDaily.temperature, normCompare.temperature)),
+            precSS: Math.round(calculateSeriesSS(baseDaily.precipitation, normCompare.precipitation)),
+            sunSS: Math.round(calculateSeriesSS(baseDaily.sunshine, normCompare.sunshine)),
+            validDays: baseDaily.dates.length
+        });
+    });
+
+    // 表示
+    const ssTableBody = document.querySelector("#ssDataTable tbody");
+    ssTableBody.innerHTML = "";
+    let minTempSS = Infinity, minPrecSS = Infinity, minSunSS = Infinity;
+    let minTempRow = null, minPrecRow = null, minSunRow = null;
+    let maxTempSS = -Infinity, maxPrecSS = -Infinity, maxSunSS = -Infinity;
+    let maxTempRow = null, maxPrecRow = null, maxSunRow = null;
+    ssResults.forEach(row => {
+        const tr = document.createElement("tr");
+        const tdYear = document.createElement("td");
+        tdYear.textContent = row.year;
+        const tdTemp = document.createElement("td");
+        tdTemp.textContent = row.tempSS;
+        const tdPrec = document.createElement("td");
+        tdPrec.textContent = row.precSS;
+        const tdSun = document.createElement("td");
+        tdSun.textContent = row.sunSS;
+        const tdValid = document.createElement("td");
+        tdValid.textContent = row.validDays;
+        tr.appendChild(tdYear);tr.appendChild(tdTemp);tr.appendChild(tdPrec);tr.appendChild(tdSun);tr.appendChild(tdValid);
+        if (row.tempSS < minTempSS) { minTempSS = row.tempSS; minTempRow = tdTemp; }
+        if (row.precSS < minPrecSS) { minPrecSS = row.precSS; minPrecRow = tdPrec; }
+        if (row.sunSS < minSunSS)  { minSunSS = row.sunSS; minSunRow = tdSun; }
+        if (row.tempSS > maxTempSS) { maxTempSS = row.tempSS; maxTempRow = tdTemp; }
+        if (row.precSS > maxPrecSS) { maxPrecSS = row.precSS; maxPrecRow = tdPrec; }
+        if (row.sunSS > maxSunSS)  { maxSunSS = row.sunSS; maxSunRow = tdSun; }
+        ssTableBody.appendChild(tr);
+    });
+    if (minTempRow) minTempRow.style.backgroundColor = "yellow";
+    if (minPrecRow) minPrecRow.style.backgroundColor = "yellow";
+    if (minSunRow) minSunRow.style.backgroundColor = "yellow";
+    if (maxTempRow) maxTempRow.style.backgroundColor = "rgba(255,0,0,0.3)";
+    if (maxPrecRow) maxPrecRow.style.backgroundColor = "rgba(255,0,0,0.3)";
+    if (maxSunRow) maxSunRow.style.backgroundColor = "rgba(255,0,0,0.3)";
+}
+</script>
+</body>
+</html>
