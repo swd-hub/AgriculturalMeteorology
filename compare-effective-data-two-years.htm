@@ -5,9 +5,11 @@
     <meta name="auther" content="澤田泰人">
     <meta name="date" content="2025年5月4日">
     <meta charset="UTF-8">
-      <meta name="robots" content="noindex">
-       <meta name="viewport" content="width=device-width, initial-scale=1.0"> 
 <title>有効データの年次比較</title>
+    <meta charset="UTF-8">
+    <meta name="robots" content="noindex">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Weather Data Visualizer</title>
     <script src=" https://cdn.jsdelivr.net/npm/chart.js "></script>
     <script src=" https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@latest "></script>
 
@@ -761,15 +763,21 @@ compareData.dates = formatDatesToMMDD(compareData.dates);
 }
 
 
-//有効データの偏差平方和の計算
+// 累積値同士の偏差平方和（SS）を計算する
+function calculateCumulativeSeriesSS(baseSeries, compareSeries) {
+    let ss = 0;
+    for (let i = 0; i < baseSeries.length && i < compareSeries.length; i++) {
+        const diff = baseSeries[i] - compareSeries[i];
+        ss += diff * diff;
+    }
+    return ss;
+}
+
+// 年ごとに累積値系列のSSを計算し結果を出す
 function calculateCumulativeSS(data, startDate, endDate, yearDifference, tempMin, tempMax) {
     try {
         const startDateObj = new Date(startDate);
-        const endDateObj = new Date(endDate); //栽培期間は年がつく
-        //endDateObj.setFullYear(endDateObj.getFullYear() + yearDifference);
-
-console.log("startDateObj",startDateObj);
-console.log("endDateObj", endDateObj);
+        const endDateObj = new Date(endDate);
 
         const baseStartYear = startDateObj.getFullYear();
         const baseEndYear = endDateObj.getFullYear();
@@ -777,126 +785,39 @@ console.log("endDateObj", endDateObj);
         let years = [...new Set(data.map(entry => new Date(entry.date).getFullYear()))];
         let ssResults = [];
 
-        const tempSumToggle = document.getElementById('tempSumToggle').checked;
-
         years.forEach(compareStartYear => {
+            // 比較対象が基準年ならスキップ
+            if(compareStartYear === baseStartYear) return;
+
+            // 比較年の期間を生成
             const compareStart = new Date(startDateObj);
             compareStart.setFullYear(compareStartYear);
-
             const compareEnd = new Date(endDateObj);
-            compareEnd.setFullYear(compareStart.getFullYear() + yearDifference);
+            compareEnd.setFullYear(compareStartYear + yearDifference);
 
+            // データ抽出
+            const filteredBase = filterData(data, startDateObj, endDateObj);
+            const filteredCompare = filterData(data, compareStart, compareEnd);
 
-            const compareEndYear = compareEnd.getFullYear();
+            // 累積値系列を生成
+            const baseCumulative = calculateCumulativeDataWithTable(filteredBase, startDateObj, endDateObj, tempMin, tempMax);
+            const compareCumulative = calculateCumulativeDataWithTable(filteredCompare, compareStart, compareEnd, tempMin, tempMax);
 
-            // 基準期間と同じならスキップ
-            if (compareStartYear === baseStartYear && compareEndYear === baseEndYear) return;
+            // SSを計算（累積値配列同士で！）
+            const tempSS = calculateCumulativeSeriesSS(baseCumulative.temperature, compareCumulative.temperature);
+            const precSS = calculateCumulativeSeriesSS(baseCumulative.precipitation, compareCumulative.precipitation);
+            const sunSS  = calculateCumulativeSeriesSS(baseCumulative.sunshine, compareCumulative.sunshine);
 
-            const baseDailyData = {};
-            const compareDailyData = {};
-
-            // 基準年の日ごとのデータを収集
-            data.forEach(entry => {
-                const date = new Date(entry.date);
-                if (
-                    date >= startDateObj && date <= endDateObj &&
-                    date.getFullYear() >= baseStartYear && date.getFullYear() <= baseEndYear &&
-                    !(date.getMonth() === 1 && date.getDate() === 29)
-                ) {
-                    const monthDay = `${date.getMonth() + 1}-${date.getDate()}`;
-                    baseDailyData[monthDay] = {
-                        temperature: entry.temperature,
-                        precipitation: entry.precipitation,
-                        sunshine: entry.sunshine
-                    };
-                }
+            ssResults.push({
+                year: compareStartYear,
+                tempSS: tempSS,
+                precSS: precSS,
+                sunSS:  sunSS,
+                validDays: baseCumulative.temperature.length //比較した日数
             });
-
-            // 比較年の日ごとのデータを収集
-            data.forEach(entry => {
-                const date = new Date(entry.date);
-                if (
-                    date >= compareStart && date <= compareEnd &&
-                    !(date.getMonth() === 1 && date.getDate() === 29)
-                ) {
-                    const monthDay = `${date.getMonth() + 1}-${date.getDate()}`;
-                    compareDailyData[monthDay] = {
-                        temperature: entry.temperature,
-                        precipitation: entry.precipitation,
-                        sunshine: entry.sunshine
-                    };
-                }
-            });
-
-            let ssTemp = 0, ssPrec = 0, ssSun = 0;
-            let validDays = 0;
-
-            let currentDate = new Date(startDateObj);
-            while (currentDate <= endDateObj) {
-                if (!(currentDate.getMonth() === 1 && currentDate.getDate() === 29)) {
-                    const monthDay = `${currentDate.getMonth() + 1}-${currentDate.getDate()}`;
-
-                    const baseEntry = baseDailyData[monthDay];
-                    const compareEntry = compareDailyData[monthDay];
-
-                    if (baseEntry && compareEntry) {
-                        let baseTemp = baseEntry.temperature;
-                        let compareTemp = compareEntry.temperature;
-                        let baseSun = baseEntry.sunshine;
-                        let compareSun = compareEntry.sunshine;
-                       
-
-                        let baseEffectiveTemp = 0;
-                        let compareEffectiveTemp = 0;
-                        let baseEffectiveSun = 0;
-                        let compareEffectiveSun= 0;
-                       
-                        if (tempSumToggle) {
-                            baseEffectiveTemp = baseTemp >= tempMin ? Math.min(baseTemp, tempMax) - tempMin : 0;
-                            compareEffectiveTemp = compareTemp >= tempMin ? Math.min(compareTemp, tempMax) - tempMin : 0;
-                            baseEffectiveSun = baseTemp >= tempMin ? baseSun:0;
-                            compareEffectiveSun= compareTemp >= tempMin ? compareSun:0;                            
-
-                        } else {
-                            baseEffectiveTemp = baseTemp >= tempMin && baseTemp <= tempMax ? baseTemp - tempMin : 0;
-                            compareEffectiveTemp = compareTemp >= tempMin && compareTemp <= tempMax ? compareTemp - tempMin : 0;
-                            baseEffectiveSun = baseTemp >= tempMin && baseTemp <= tempMax ? baseSun:0;
-                            compareEffectiveSun= compareTemp >= tempMin && compareTemp <= tempMax ? compareSun:0;
-                        }
-
-                        ssTemp += (baseEffectiveTemp - compareEffectiveTemp) ** 2;
-                        ssPrec += (baseEntry.precipitation - compareEntry.precipitation) ** 2;
-                        ssSun += (baseEffectiveSun - compareEffectiveSun) ** 2;
-
-                        validDays++;
-                    }
-                   
-                    //console.log("validDays",validDays);
-                   
-                }
-                currentDate.setDate(currentDate.getDate() + 1);
-            }
-
-            if (validDays > 0) {
-                ssResults.push({
-                    year: compareStartYear,
-                    tempSS: ssTemp,
-                    precSS: ssPrec,
-                    sunSS: ssSun,
-                    validDays: validDays
-                });
-            }
         });
 
-        let minTempSS = ssResults.length > 0 ? Math.round(Math.min(...ssResults.map(row => row.tempSS))) : Infinity;
-        let minPrecSS = ssResults.length > 0 ? Math.round(Math.min(...ssResults.map(row => row.precSS))) : Infinity;
-        let minSunSS = ssResults.length > 0 ? Math.round(Math.min(...ssResults.map(row => row.sunSS))) : Infinity;
-
-        let maxTempSS = ssResults.length > 0 ? Math.round(Math.max(...ssResults.map(row => row.tempSS))) : -Infinity;
-        let maxPrecSS = ssResults.length > 0 ? Math.round(Math.max(...ssResults.map(row => row.precSS))) : -Infinity;
-        let maxSunSS = ssResults.length > 0 ? Math.round(Math.max(...ssResults.map(row => row.sunSS))) : -Infinity;
-
-        updateSSTable(ssResults); // ← ここを修正
+        updateSSTable(ssResults);
 
     } catch (error) {
         console.error("累積データのSS計算中にエラーが発生:", error);
