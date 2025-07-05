@@ -83,7 +83,7 @@
 </head>
 <body>
   <button onclick="window.open('https://www.data.jma.go.jp/gmd/risk/obsdl/index.php', '_blank')">気象庁のサイトを開く</button>
-  <h1>気象データツール 一覧</h1>
+  <h1>気象データツール 一覧　出雲</h1>
   <ul>
     <li>
         <a href="weather-progress.htm" target="_blank">日別値　気象データ気象経過</a>
@@ -99,9 +99,17 @@
         <img src="images/weather-progressR.png" alt="画像" class="thumbnail" onclick="openModal(this)">
         <img src="images/weather-progressS.png" alt="画像" class="thumbnail" onclick="openModal(this)">
     </li>
+　　 <li>
+        <a href="compare-daily-weather-data-two-years.htm" class="text" target="_blank">日別値　気象データ二年次比較</a>
+        <div class="description">前年と本年の比較など二期の気象データをグラフにします。</div>
+        <img src="images/compare-daily-weather-data-two-yearsT.png" alt="画像" class="thumbnail" onclick="openModal(this)">
+        <img src="images/compare-daily-weather-data-two-yearsR.png" alt="画像" class="thumbnail" onclick="openModal(this)">
+        <img src="images/compare-daily-weather-data-two-yearsS.png" alt="画像" class="thumbnail" onclick="openModal(this)">
+        <img src="images/compare-daily-weather-data-two-yearsTable.png" alt="画像" class="thumbnail" onclick="openModal(this)">
+    </li>  
     <li>
-        <a href="compare-effective-data-two-years.htm" class="text" target="_blank">日別値　有効データ年二年次比較</a>
-        <div class="description">前年と本年の比較など二期の有効データをグラフにします。</div>
+        <a href="compare-effective-data-two-years.htm" class="text" target="_blank">日別値　有効データ　二年次比較</a>
+        <div class="description">前年と本年の比較など二期の有効データの積算値をグラフにします。</div>
         <img src="images/compare-effective-data-two-yearsT.png" alt="画像" class="thumbnail" onclick="openModal(this)">
         <img src="images/compare-effective-data-two-yearsR.png" alt="画像" class="thumbnail" onclick="openModal(this)">
         <img src="images/compare-effective-data-two-yearsS.png" alt="画像" class="thumbnail" onclick="openModal(this)">
@@ -142,7 +150,7 @@
       <img src="images/annual-variation-weather-effectiveTable.png" alt="画像" class="thumbnail" onclick="openModal(this)">
     </li>
       
-    <li>
+    <!--li>
         <a href="import-weather-data-guide.htm" target="_blank">気象データ取り込み説明</a>
         <div class="description">気象庁のサイトから気象データを取り込む手順を説明します。</div>
         <img src="images/import-weather-data-guide.png" alt="画像" class="thumbnail" onclick="openModal(this)">
@@ -156,7 +164,7 @@
       <a href="add-hourly-data.htm" target="_blank">時別値　追加</a>
       <div class="description">気象データの時別値を追加できます。</div>
       <img src="images/add-hourly-data.png" alt="画像" class="thumbnail" onclick="openModal(this)">
-  </li>
+  </li-->
       
   </ul>
   <div id="myModal" class="modal">
