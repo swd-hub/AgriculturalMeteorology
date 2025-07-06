@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>出雲市の日出・日入・夜間長</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+/* 画面表示用スタイル */
+@media screen {
+    .large-content {
+        font-size: 24px;
+        width: 100%;
+    }
+}
+
+/* ボタン・タイトルなど共通カラー */
+button, #btn {
+    background-color: #4CAF50;
+    color: white;
+    padding: 10px 24px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 1.05em;
+    transition: background 0.2s;
+}
+button:hover, #btn:hover {
+    background-color: #388e3c;
+}
+
+h1 {
+    background-color: #4CAF50;
+    color: white;
+    padding: 14px;
+    margin-bottom: 1.5em;
+    text-align: center;
+    border-radius: 6px;
+    font-size: 1.6em;
+    letter-spacing: 0.05em;
+}
+h2 {
+    padding: 10px;
+    text-align: center;
+}
+
+label {
+    margin-right: 1.2em;
+    font-size: 1.08em;
+}
+input[type="date"] {
+    padding: 7px 12px;
+    border: 1px solid #b2b2b2;
+    border-radius: 4px;
+    font-size: 1em;
+}
+
+.flex-area {
+    display: flex;
+    justify-content: flex-start;
+    align-items: flex-start;
+    margin-top: 2em;
+    gap: 2em;
+    flex-wrap: wrap;
+}
+
+.right-align {
+    text-align: right;
+}
+
+/* テーブル */
+#resultTable {
+    min-width: 440px;
+    background: #fff;
+    border-collapse: collapse;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.09);
+    font-size: 1.03em;
+    border-radius: 6px;
+    overflow: hidden;
+}
+#resultTable th, #resultTable td {
+    padding: 0.6em 1.3em;
+    border: 1px solid #d0d0e0;
+    text-align: center;
+}
+#resultTable th {
+    background: #e3f3e6;
+    font-weight: bold;
+}
+
+/* 二至二分テーブル */
+.seasonal-dates {
+  margin: 2em 0;
+  text-align: center;
+}
+#seasonTable {
+  margin: 0 auto;
+  border-collapse: collapse;
+  font-size: 1.05em;
+  box-shadow: 0 1px 6px rgba(0,0,0,0.1);
+}
+#seasonTable th, #seasonTable td {
+  padding: 0.6em 1.2em;
+  border: 1px solid #d0d0e0;
+}
+#seasonTable th {
+  background-color: #e3f3e6;
+  font-weight: bold;
+}
+
+/* グラフエリア */
+.chart-container {
+    width: 1100px;
+    height: 750px;
+    background: #fff;
+    border-radius: 6px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+    padding: 10px 6px 0 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+}
+#daylightChart {
+    width: 100% !important;
+    height: 100% !important;
+    max-width: 1100px;
+    max-height: 600px;
+    background: #fff;
+    display: block;
+    border-radius: 4px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+}
+
+#loadingMessage {
+    position: absolute;
+    left: 0; top: 0; width: 100%; height: 100%;
+    background: rgba(255,255,255,0.8);
+    display: none; align-items: center; justify-content: center; z-index: 2;
+    font-size: 2em; color: #2976d6;
+    font-weight: bold;
+    flex-direction: column;
+}
+#loadingMessage .spinner {
+    margin-bottom: 16px;
+    width: 48px; height: 48px;
+    border: 6px solid #cce0fa;
+    border-top: 6px solid #2976d6;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+@keyframes spin {
+  100% { transform: rotate(360deg); }
+}
+
+/* モバイル対応 */
+@media (max-width: 900px) {
+    .flex-area {
+        flex-direction: column;
+        gap: 1.3em;
+    }
+    .chart-container {
+        width: 98vw;
+        max-width: 100vw;
+        min-width: 260px;
+        height: 47vw;
+        max-height: 60vw;
+    }
+    #daylightChart {
+        max-width: 100vw;
+        max-height: 55vw;
+    }
+    #resultTable {
+        min-width: 0;
+        width: 100%;
+        font-size: 1em;
+    }
+}
+  </style>
+</head>
+<body>
+  <h1>出雲市の日出・日入・夜間長</h1>
+  <label>開始日:
+    <input type="date" id="start-date">
+  </label>
+  <label>終了日:
+    <input type="date" id="end-date">
+  </label>
+  <button id="btn">取得</button>
+
+  <!-- 春分・夏至・秋分・冬至 表 -->
+<!-- 春分・夏至・秋分・冬至 表（行列反転バージョン） -->
+<div class="seasonal-dates">
+  <h2>二至二分の日付　（年により日が前後する）</h2>
+  <table id="seasonTable">
+    <thead>
+      <tr>
+        <th>名称</th>
+        <th>春分</th>
+        <th>夏至</th>
+        <th>秋分</th>
+        <th>冬至</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>日付</td>
+        <td>3月20日</td>
+        <td>6月21日</td>
+        <td>9月22日</td>
+        <td>12月21日</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+
+  <div class="flex-area">
+    <table id="resultTable">
+      <thead>
+        <tr>
+          <th>日付</th>
+          <th>日出（JST）</th>
+          <th>日没（JST）</th>
+          <th>昼間長</th>
+          <th>夜間長</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <div class="chart-container">
+      <div id="loadingMessage">
+        <div class="spinner"></div>
+        読み込み中...
+      </div>
+      <canvas id="daylightChart"></canvas>
+    </div>
+  </div>
+
+  <script>
+    const today = new Date();
+    const oneMonthLater = new Date(today);
+    oneMonthLater.setMonth(today.getMonth() + 1);
+
+    function toYYYYMMDD(date) {
+      const offset = date.getTimezoneOffset();
+      const localDate = new Date(date.getTime() - (offset * 60 * 1000));
+      return localDate.toISOString().slice(0, 10);
+    }
+
+    document.addEventListener("DOMContentLoaded", function() {
+      document.getElementById("start-date").value = toYYYYMMDD(today);
+      document.getElementById("end-date").value = toYYYYMMDD(oneMonthLater);
+    });
+
+    function formatTimeJST(utcISOString) {
+      const d = new Date(utcISOString);
+      return d.toLocaleTimeString('ja-JP', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false,
+        timeZone: 'Asia/Tokyo'
+      });
+    }
+
+    function formatHMS(sec) {
+      const h = Math.floor(sec / 3600);
+      const m = Math.floor((sec % 3600) / 60);
+      const s = Math.floor(sec % 60);
+      return `${h}時間${m}分${s}秒`;
+    }
+
+    document.getElementById("btn").addEventListener("click", async () => {
+      document.getElementById("loadingMessage").style.display = "flex";
+
+      const startDate = new Date(document.getElementById("start-date").value);
+      const endDate = new Date(document.getElementById("end-date").value);
+      const lat = 35.3667;
+      const lon = 132.75;
+
+      const tableBody = document.querySelector('#resultTable tbody');
+      tableBody.innerHTML = "";
+
+      let labels = [];
+      let nightHours = [];
+
+      for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+        const dateStr = d.toISOString().slice(0, 10);
+        const url = `https://api.sunrise-sunset.org/json?lat=${lat}&lng=${lon}&date=${dateStr}&formatted=0`;
+        try {
+          const res = await fetch(url);
+          const data = await res.json();
+          if (!data.results || !data.results.sunrise || !data.results.sunset) throw new Error('APIレスポンス異常');
+
+          const sunriseJST = formatTimeJST(data.results.sunrise);
+          const sunsetJST = formatTimeJST(data.results.sunset);
+
+          const sunriseDate = new Date(data.results.sunrise);
+          const sunsetDate = new Date(data.results.sunset);
+          const daylightSec = (sunsetDate - sunriseDate) / 1000;
+          const nightSec = 24 * 60 * 60 - daylightSec;
+
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td>${dateStr}</td>
+            <td>${sunriseJST}</td>
+            <td>${sunsetJST}</td>
+            <td>${formatHMS(daylightSec)}</td>
+            <td>${formatHMS(nightSec)}</td>
+          `;
+          tableBody.appendChild(tr);
+
+          labels.push(dateStr);
+          nightHours.push(Number((nightSec / 3600).toFixed(2)));
+
+        } catch (err) {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `<td colspan="5">${dateStr} 取得エラー: ${err}</td>`;
+          tableBody.appendChild(tr);
+          labels.push(dateStr);
+          nightHours.push(null);
+        }
+      }
+
+      const ctx = document.getElementById('daylightChart').getContext('2d');
+      if(window.daylightChartObj){ window.daylightChartObj.destroy(); }
+      window.daylightChartObj = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: '夜間長（時間）',
+            data: nightHours,
+            borderColor: '#2976d6',
+            backgroundColor: 'rgba(41, 118, 214, 0.13)',
+            pointBackgroundColor: '#2976d6',
+            pointRadius: 3,
+            spanGaps: true,
+            tension: 0.28
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            title: {
+              display: true,
+              text: '夜間長（日没から日出）',
+              font: { size: 20 }
+            }
+          },
+          scales: {
+            x: { title: { display: true, text: '日付', font: {size: 16} }, ticks: {font:{size:15}} },
+            y: {
+              title: { display: true, text: '夜間長（時間）', font: {size: 16} },
+              min: 8,
+              max: 16,
+              ticks: { stepSize: 2, font:{size:15} }
+            }
+          }
+        }
+      });
+
+      document.getElementById("loadingMessage").style.display = "none";
+    });
+  </script>
+</body>
+</html>
