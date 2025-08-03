@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta name="discription" content="気象データの日別値と平年値をグラフ化する。">  
+<meta name="auther" content="澤田泰人">
+<meta name="date" content="2025年5月4日">
+<meta charset="UTF-8">
+<title>気象経過</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@latest"></script>
+    <style>
+/* 印刷用の設定 */
+@media print {
+  * {
+    margin: 0;
+    padding: 0;
+  }
+  input,
+  button,
+  select,
+  label,
+  form,
+  h5,
+  h3 {
+    display: none !important;
+  }
+}
+
+/* ボタンのスタイル */
+button {
+  background-color: #4CAF50;
+  color: white;
+  padding: 10px 20px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  text-align: right;
+}
+
+/* フォームのスタイル */
+form {
+  flex: 1;
+  margin: 20px;
+  padding: 40px;
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  width: 200px;
+}
+
+/* ヘッダーのスタイル */
+h1 {
+  background-color: #4CAF50;
+  color: white;
+  padding: 10px;
+  text-align: center;
+}
+
+/* ラベル内の input と button を横並びにする */
+label {
+  display: flex;
+  align-items: center;
+  gap: 8px; /* 間に少し余白 */
+}
+
+/* チャートの親要素 */
+.chart-container {
+  width: 100%;
+  /* max-width: 400px;  元のコードにあったが、グラフが小さくなるため削除または調整 */
+  margin: 0 auto;    /* 中央寄せ（任意） */
+}
+/* キャンバス（グラフ） */
+canvas {
+  width: 100% !important;
+  height: auto !important;
+}
+
+/* フレックスレイアウトで要素を並べる */
+.container {
+  display: flex;
+  flex-wrap: wrap;       /* モバイルで折り返す */
+  gap: 20px;
+  justify-content: flex-start;  /* 左揃えにする */
+}
+
+/* 右寄せ */
+.right-align {
+  text-align: right;
+}
+
+/* テーブルとチャートの親要素 */
+.table-container, .chart-container {
+  flex: 1;
+  min-width: 300px;      /* 折り返し条件を調整 */
+}
+
+/* 入力フォームのスタイル */
+input[type="date"], input[type="file"], input[type="number"] {
+  width: 150px;
+  padding: 8px 10px;
+  font-size: 16px;
+  margin-bottom: 12px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+/* ボタンのスタイル */
+.GraphupdateButton {
+  background-color: #4CAF50;
+  color: white;
+  padding: 8px 12px;
+  font-size: 16px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-left: 4px; /* 任意で左に余白を追加 */
+}
+#fileInput{
+ width:500px;
+}
+#chartcanvas
+{
+  width: 80%;
+  height: auto;
+  padding: 10px;
+  /* position: absolute; と right/left/height はフローレイアウトのため削除 */
+}
+    </style>
+</head>
+<body>
+ 
+    <h1 id="mainTitle">気象経過</h1>
+
+    <div class="right-align">
+        <button onclick="window.open('https://www.data.jma.go.jp/gmd/risk/obsdl/index.php', '_blank')">気象庁のサイトを開く</button>
+    </div>
+    <br>
+    <h5>ファイルの選択ボタンにドラッグ＆ドロップすることで取り込み可能</h5>
+    <input type="file" id="fileInput" accept=".csv">
+    <div class="container">
+        <form>
+            <label for="cultivationStartDate">開始日:</label>
+            <input type="date" id="cultivationStartDate">
+            <label for="cultivationEndDate">終了日（最終日）:</label>
+            <input type="date"  id="cultivationEndDate">
+            <!-- ファイル・日付を更新したあとに押すボタン -->
+            <button type="button" id="updateButton" onclick="handleFileSelect()">データ更新</button>
+        </form>
+    </div>
+<div id="chartcanvas" style="margin-top: 5em; display: none;">
+<h3>時別データ</h3>
+<div style="margin-bottom: 3em;">
+  <label>
+    縦軸最大値（時別気温）:
+    <input type="number" id="hourlyTempMax" value="30" step="5" placeholder="例: 30">
+  </label>
+  <button type="button" class="GraphupdateButton" onclick="handleFileSelect()">グラフ更新</button>
+<canvas id="hourlyTempChart"></canvas>
+</div>
+<div style="margin-bottom: 3em;">
+  <label>
+    縦軸最大値（時別降水量）:
+    <input type="number" id="hourlyPrecMax" value="10" step="2" placeholder="例: 10">
+  </label>
+    <button type="button" class="GraphupdateButton" onclick="handleFileSelect()">グラフ更新</button>
+<canvas id="hourlyPrecChart"></canvas>
+</div>
+<div style="margin-bottom: 3em;">
+  <label>
+    縦軸最大値（時別日照時間）観測を実施する地点のみ:
+    <input type="number" id="hourlySunMax" value="1"  step="0.5" placeholder="例: 1">
+  </label>
+    <button type="button" class="GraphupdateButton" onclick="handleFileSelect()">グラフ更新</button>
+<canvas id="hourlySunChart"></canvas>
+</div>
+</div>
+    <script>
+function updateMainTitle() {
+    const startDate = document.getElementById("cultivationStartDate").value;
+    const endDate = document.getElementById("cultivationEndDate").value;
+    const fileInput = document.getElementById("fileInput");
+    const file = fileInput.files[0];
+
+    if (startDate && endDate && file) {
+        const startYear = new Date(startDate).getFullYear();
+        const endYear = new Date(endDate).getFullYear();
+        // ファイル名から地点情報を取得（例: 出雲_2024.csv -> 出雲）
+        const fileNameMatch = file.name.match(/^(.*?)[-_].*\.csv$/);
+        const locationName = fileNameMatch ? fileNameMatch[1] : '';
+
+        const title = `${startYear}年-${endYear}年　気象経過（${locationName || '地点不明'}）`;
+        document.getElementById("mainTitle").textContent = title;
+    }
+}
+
+// ファイル選択または日付変更後にタイトルを更新する
+document.getElementById("fileInput").addEventListener("change", updateMainTitle);
+document.getElementById("cultivationStartDate").addEventListener("change", updateMainTitle);
+document.getElementById("cultivationEndDate").addEventListener("change", updateMainTitle);
+   
+//日付自動設定
+    function updateDateFields() {
+        const currentDate = new Date();
+
+        // 終了日を現在の日付に設定
+        const currentYear = currentDate.getFullYear();
+        const currentMonth = String(currentDate.getMonth() + 1).padStart(2, '0'); // 月は0から始まるため+1
+        const currentDay = String(currentDate.getDate()).padStart(2, '0');
+        document.getElementById('cultivationEndDate').value = `${currentYear}-${currentMonth}-${currentDay}`;
+
+        // 開始日を現在の日付から1週間前に設定
+        const oneWeekAgo = new Date(currentDate.getTime() - (7 * 24 * 60 * 60 * 1000)); // 7日間のミリ秒を引く
+        const startYear = oneWeekAgo.getFullYear();
+        const startMonth = String(oneWeekAgo.getMonth() + 1).padStart(2, '0');
+        const startDay = String(oneWeekAgo.getDate()).padStart(2, '0');
+        document.getElementById('cultivationStartDate').value = `${startYear}-${startMonth}-${startDay}`;
+    }
+
+    // ページ読み込み時に日付フィールドを更新
+    window.onload = updateDateFields;
+
+ let hourlyTempChart, hourlyPrecChart, hourlySunChart; // チャートインスタンスを時別用に変更
+
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('fileInput').addEventListener('change', handleFileSelect, false);
+            document.getElementById('updateButton').addEventListener('click', handleFileSelect, false);
+        });
+
+        function shiftJISToUTF8(arrayBuffer) {
+            const decoder = new TextDecoder('shift-jis');
+            const uint8Array = new Uint8Array(arrayBuffer);
+            return decoder.decode(uint8Array);
+        }
+
+// 時別CSVのクレンジング
+function parseCSV(content) {
+    // 空行を無視し、トリム
+    const lines = content.trim().split('\n').filter(line => line.trim() !== "");
+
+    // データが始まる行を特定 (例: 5行目からデータが始まる)
+    // CSVサンプル:
+    // 1: ダウンロードした時刻...
+    // 2: ,,,,出雲,...
+    // 3: 年,月,日,時,気温(℃),気温(℃),気温(℃),降水量(mm),降水量(mm),降水量(mm),日照時間(時間),日照時間(時間),日照時間(時間)
+    // 4: ,,,,,品質情報,均質番号,,品質情報,均質番号,,品質情報,均質番号
+    // 5: 2024,1,1,1,7.9,8,1,0.5,8,1,0,8,1
+    // データはlines[4]から始まる
+    const dataLines = lines.slice(4);
+
+    const parsedData = dataLines.map(line => {
+        const cols = line.split(',');
+        // 各要素のインデックス:
+        // 年: 0, 月: 1, 日: 2, 時: 3
+        // 気温(℃): 4 (品質情報: 5, 均質番号: 6)
+        // 降水量(mm): 7 (品質情報: 8, 均質番号: 9)
+        // 日照時間(時間): 10 (品質情報: 11, 均質番号: 12)
+
+        const year = parseInt(cols[0], 10);
+        const month = parseInt(cols[1], 10);
+        const day = parseInt(cols[2], 10);
+        const hour = parseInt(cols[3], 10);
+
+        // Dateオブジェクトは月を0から11で扱うため、-1する
+        const dateTime = new Date(year, month - 1, day, hour);
+
+        // parseFloatで数値に変換。データがない場合は0とする
+        const temperature = parseFloat(cols[4]) || 0;
+        const precipitation = parseFloat(cols[7]) || 0;
+        const sunshine = parseFloat(cols[10]) || 0;
+
+        return {
+            dateTime: dateTime, // 時刻情報を含むDateオブジェクト
+            temperature: temperature,
+            precipitation: precipitation,
+            sunshine: sunshine
+        };
+    });
+
+    return parsedData;
+}
+
+// グラフ描画データ作成と描画のメイン処理
+function handleFileSelect() {
+    const file = document.getElementById("fileInput").files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function (e) {
+        const utf8Content = shiftJISToUTF8(e.target.result);
+        const parsedHourlyData = parseCSV(utf8Content); // 時別データをパース
+
+        // 栽培開始日と終了日のフィルタリング
+        const cultivationStartDate = new Date(document.getElementById("cultivationStartDate").value);
+        const cultivationEndDate = new Date(document.getElementById("cultivationEndDate").value);
+        cultivationEndDate.setHours(23, 59, 59, 999); // 終了日の23:59:59まで含める
+
+        const filteredData = parsedHourlyData.filter(d => 
+            d.dateTime >= cultivationStartDate && d.dateTime <= cultivationEndDate
+        );
+        
+        // フィルタリングされたデータでグラフを更新
+        updateHourlyCharts(filteredData);
+        document.getElementById("chartcanvas").style.display = "block"; // グラフセクションを表示
+        updateMainTitle(); // タイトルも更新
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+// 時別グラフ描画関数
+function updateHourlyCharts(data) {
+    const labels = data.map(d => {
+        const year = String(d.dateTime.getFullYear()).slice(-2); // 下2桁
+        const month = d.dateTime.getMonth() + 1;
+        const day = d.dateTime.getDate();
+        const hour = d.dateTime.getHours();
+        return `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')} ${hour.toString().padStart(2, '0')}時`;
+    });
+    
+    const temperatures = data.map(d => d.temperature);
+    const precipitations = data.map(d => d.precipitation);
+    const sunshines = data.map(d => d.sunshine);
+
+    let maxTempValue = parseFloat(document.getElementById('hourlyTempMax').value);
+    if (isNaN(maxTempValue) || maxTempValue <= 0) maxTempValue = 30; // デフォルト値
+
+    let maxPrecValue = parseFloat(document.getElementById('hourlyPrecMax').value);
+    if (isNaN(maxPrecValue) || maxPrecValue <= 0) maxPrecValue = 10; // デフォルト値
+
+    let maxSunValue = parseFloat(document.getElementById('hourlySunMax').value);
+    if (isNaN(maxSunValue) || maxSunValue <= 0) maxSunValue = 1; // デフォルト値
+
+    const createChart = (ctx, type, labels, datasets, yMax, yTitleText) => {
+        return new Chart(ctx, {
+            type: type,
+            data: { labels, datasets },
+            options: {
+                layout: { padding: { left: 20, right: 20, top: 20, bottom: 20 } },
+                plugins: {
+                    legend: { labels: { font: { size: 30 } } }
+                },
+                scales: {
+                    x: {
+                        ticks: { font: { size: 28 } },
+                        title: {
+                            display: true,
+                            text: '年-月-日 時刻',
+                            font: { size: 30 }
+                        }
+                    },
+                    y: {
+                        ticks: { font: { size: 28 } },
+                        title: {
+                            display: true,
+                            text: yTitleText,
+                            font: { size: 30 }
+                        },
+                        suggestedMax: yMax,
+                        beginAtZero: true // 0から開始
+                    }
+                }
+            }
+        });
+    };
+
+    // 気温チャート
+    if (hourlyTempChart) hourlyTempChart.destroy();
+    hourlyTempChart = createChart(
+        document.getElementById('hourlyTempChart').getContext('2d'),
+        'line', labels,
+        [
+            {
+                label: '時別気温(℃)',
+                data: temperatures,
+                borderColor: 'rgba(255, 165, 0, 1)',
+                borderWidth: 3,
+                fill: false,
+                tension: 0.1 // 滑らかな線
+            }
+        ],
+        maxTempValue,
+        '気温 (℃)'
+    );
+
+    // 降水量チャート
+    if (hourlyPrecChart) hourlyPrecChart.destroy();
+    hourlyPrecChart = createChart(
+        document.getElementById('hourlyPrecChart').getContext('2d'),
+        'bar', labels,
+        [
+            {
+                label: '時別降水量(mm)',
+                data: precipitations,
+                backgroundColor: 'rgba(54, 162, 235, 0.8)',
+                maxBarThickness: 10
+            }
+        ],
+        maxPrecValue,
+        '降水量 (mm)'
+    );
+
+    // 日照時間チャート
+    if (hourlySunChart) hourlySunChart.destroy();
+    hourlySunChart = createChart(
+        document.getElementById('hourlySunChart').getContext('2d'),
+        'bar', labels,
+        [
+            {
+                label: '時別日照時間(時間)',
+                data: sunshines,
+                backgroundColor: 'rgba(255, 206, 86, 0.8)',
+                maxBarThickness: 10
+            }
+        ],
+        maxSunValue,
+        '日照時間 (時間)'
+    );
+}
+     </script>
+
+</body>
+</html>
