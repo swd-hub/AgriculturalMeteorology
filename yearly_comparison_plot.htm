@@ -70,7 +70,7 @@ canvas {
   </style>
 </head>
 <body>
-  <h1 id="mainTitle">気象経過 出雲</h1>
+  <h1 id="mainTitle">気象経過 地名</h1>
 
   <!-- ラベルをボタン風にしてファイル選択を起動 -->
   <input type="file" id="csvFileInput" accept=".csv">
@@ -85,6 +85,24 @@ canvas {
 let csvData = [];
 
 window.addEventListener('DOMContentLoaded', loadCSVWithFallback);
+
+document.getElementById('csvFileInput').addEventListener('change', function(e) {
+  const file = e.target.files[0];
+  const reader = new FileReader();
+
+  // ファイル名の冒頭（拡張子除く）を取得してタイトル更新
+  const fileName = file.name.replace(/\.[^/.]+$/, ''); // 拡張子除去
+  const locationName = fileName.split(/日別値|_/)[0]; // 「出雲日別値.csv」→「出雲」
+  document.getElementById('mainTitle').textContent = `気象経過 ${locationName}`;
+
+  reader.onload = function(event) {
+    const content = shiftJISToUTF8(event.target.result);
+    csvData = parseCSV(content);
+    handleAnnualGraphUpdate();
+  };
+  reader.readAsArrayBuffer(file);
+});
+
 
 function triggerFileInput() {
   document.getElementById('csvFileInput').click();
