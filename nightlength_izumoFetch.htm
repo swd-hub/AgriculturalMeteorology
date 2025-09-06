@@ -250,17 +250,18 @@ function getSelectedDateRange() {
 // ボタン押下 → fetch試行 → 失敗時はファイル選択へ
 document.getElementById("btn").addEventListener("click", async () => {
   document.getElementById("loadingMessage").style.display = "block";
-  document.getElementById("fileLabel").style.display = "none";
+  // document.getElementById("fileLabel").style.display = "none"; ← これを削除
   const { start, end } = getSelectedDateRange();
   try {
     const response = await fetch("izumo_2025_sun_data.csv");
     if (!response.ok) throw new Error(`CSVファイル取得失敗: ${response.status}`);
     const csvText = await response.text();
     processCSV(csvText, start, end);
+    document.getElementById("fileLabel").style.display = "none"; // 成功時は隠す（成功時のみ！）
   } catch (err) {
     console.warn("fetch失敗。ローカルCSVを選択してください。", err);
     document.getElementById("loadingMessage").style.display = "none";
-    document.getElementById("fileLabel").style.display = "block";
+    document.getElementById("fileLabel").style.display = "block"; // 失敗時のみ表示
   }
 });
 
@@ -374,6 +375,7 @@ function renderChart(labels, daylightHours, nightHours) {
 </script>
 </body>
 </html>
+
 
 
 
