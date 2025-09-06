@@ -180,27 +180,24 @@ input[type="date"] {
 </head>
 <body>
   <h1>出雲市の日出・日入・夜間長</h1>
- <br><br>
-<label id="fileLabel" style="display:none">
-  CSVファイルを選択: <input type="file" id="csvFile" accept=".csv">
-</label>
-
-
   <br><br>
-  <!-- 入力を月＋日で分ける -->
-<label>開始日: 
-  <input type="number" id="start-month" min="1" max="12" value="3"> 月
-  <input type="number" id="start-day" min="1" max="31" value="5"> 日
-</label>
-<br>
-<label>終了日: 
-  <input type="number" id="end-month" min="1" max="12" value="3"> 月
-  <input type="number" id="end-day" min="1" max="31" value="20"> 日
-</label>
-<button id="btn">実行</button>  
-<p id="loadingMessage" style="display:none;">読み込み中...</p>
-  
+  <label id="fileLabel" style="display:none">
+    CSVファイルを選択: <input type="file" id="csvFile" accept=".csv">
+  </label>
+  <br><br>
 
+  <!-- 入力を月＋日で分ける -->
+  <label>開始日: 
+    <input type="number" id="start-month" min="1" max="12" value="3"> 月
+    <input type="number" id="start-day" min="1" max="31" value="5"> 日
+  </label>
+  <br>
+  <label>終了日: 
+    <input type="number" id="end-month" min="1" max="12" value="3"> 月
+    <input type="number" id="end-day" min="1" max="31" value="20"> 日
+  </label>
+  <button id="btn">実行</button>  
+  <p id="loadingMessage" style="display:none;">読み込み中...</p>
 
   <div class="flex-area">
     <table id="resultTable" border="1">
@@ -215,24 +212,21 @@ input[type="date"] {
       </thead>
       <tbody></tbody>
     </table>
-
     <div class="chart-container" style="width:800px; height:500px;">
-      <div id="loadingMessage" style="display:none;">読み込み中...</div>
       <canvas id="daylightChart"></canvas>
     </div>
   </div>
 
-<script>// "03-05" のように MM-DD 形式へ
+<script>
+// "03-05" のように MM-DD 形式へ
 function toMMDD(month, day) {
   return String(month).padStart(2, "0") + "-" + String(day).padStart(2, "0");
 }
-
 // CSVの日付を "YYYY/MM/DD" → "MM-DD"
 function normalizeDate(dateStr) {
   const [y, m, d] = dateStr.split("/");
   return `${m.padStart(2,"0")}-${d.padStart(2,"0")}`;
 }
-
 // "○時間○分○秒" → 時間（小数）
 function parseJapaneseDuration(text) {
   const h = parseFloat(text.match(/(\d+)時間/)?.[1] || 0);
@@ -240,7 +234,6 @@ function parseJapaneseDuration(text) {
   const s = parseFloat(text.match(/(\d+)秒/)?.[1] || 0);
   return h + m / 60 + s / 3600;
 }
-
 // 入力された開始・終了日をMM-DD形式で取得
 function getSelectedDateRange() {
   const start = toMMDD(
@@ -256,28 +249,18 @@ function getSelectedDateRange() {
 
 // ボタン押下 → fetch試行 → 失敗時はファイル選択へ
 document.getElementById("btn").addEventListener("click", async () => {
-  // ローディング表示、ファイル選択UIは一旦非表示
   document.getElementById("loadingMessage").style.display = "block";
   document.getElementById("fileLabel").style.display = "none";
-
   const { start, end } = getSelectedDateRange();
-
   try {
     const response = await fetch("izumo_2025_sun_data.csv");
-
-    // fetch失敗（404など）を明示的に判定
-    if (!response.ok) {
-      throw new Error(`CSVファイル取得失敗: ${response.status}`);
-    }
-
+    if (!response.ok) throw new Error(`CSVファイル取得失敗: ${response.status}`);
     const csvText = await response.text();
     processCSV(csvText, start, end);
   } catch (err) {
     console.warn("fetch失敗。ローカルCSVを選択してください。", err);
-
-    // ローディング非表示 → ファイル選択UI表示
     document.getElementById("loadingMessage").style.display = "none";
-    document.getElementById("fileLabel").style.display = "block"; // blockで改行表示
+    document.getElementById("fileLabel").style.display = "block";
   }
 });
 
@@ -288,28 +271,23 @@ document.getElementById("csvFile").addEventListener("change", (e) => {
     console.warn("ファイルが選択されていません。");
     return;
   }
-
   const reader = new FileReader();
   reader.onload = () => {
     try {
-      // Encoding.js が読み込まれているか確認
       if (typeof Encoding === "undefined") {
         throw new Error("Encoding.js が読み込まれていません。");
       }
-
       const sjisArray = new Uint8Array(reader.result);
       const utf8Text = Encoding.convert(sjisArray, {
         to: 'UNICODE',
         from: 'SJIS',
         type: 'string'
       });
-
-      // 変換結果の妥当性チェック
       if (!utf8Text || utf8Text.length < 10) {
         throw new Error("変換後のCSVテキストが不正です。");
       }
-
       const { start, end } = getSelectedDateRange();
+      document.getElementById("loadingMessage").style.display = "block";
       processCSV(utf8Text, start, end);
     } catch (err) {
       console.error("SJIS変換失敗:", err);
@@ -317,28 +295,22 @@ document.getElementById("csvFile").addEventListener("change", (e) => {
       document.getElementById("loadingMessage").style.display = "none";
     }
   };
-
   reader.readAsArrayBuffer(file);
 });
-
 
 // CSVテキストを解析して表とグラフを生成
 function processCSV(csvText, startDateStr, endDateStr) {
   const tableBody = document.querySelector('#resultTable tbody');
   tableBody.innerHTML = "";
-
   let labels = [];
   let nightHours = [];
   let daylightHours = [];
-
   const rows = csvText.trim().split("\n").slice(1);
   rows.forEach(row => {
     const cols = row.split(",");
     if (cols.length < 5) return;
-
     const [rawDate, sunrise, sunset, daylight, night] = cols;
     const date = normalizeDate(rawDate); // "MM-DD"
-
     if (date >= startDateStr && date <= endDateStr) {
       const tr = document.createElement("tr");
       tr.innerHTML = `
@@ -349,13 +321,11 @@ function processCSV(csvText, startDateStr, endDateStr) {
         <td>${night}</td>
       `;
       tableBody.appendChild(tr);
-
       labels.push(date);
       nightHours.push(Number(parseJapaneseDuration(night).toFixed(2)));
       daylightHours.push(Number(parseJapaneseDuration(daylight).toFixed(2)));
     }
   });
-
   renderChart(labels, daylightHours, nightHours);
   document.getElementById("loadingMessage").style.display = "none";
 }
@@ -364,7 +334,6 @@ function processCSV(csvText, startDateStr, endDateStr) {
 function renderChart(labels, daylightHours, nightHours) {
   const ctx = document.getElementById('daylightChart').getContext('2d');
   if (window.daylightChartObj?.destroy) window.daylightChartObj.destroy();
-
   window.daylightChartObj = new Chart(ctx, {
     type: 'line',
     data: {
@@ -402,11 +371,9 @@ function renderChart(labels, daylightHours, nightHours) {
     }
   });
 }
-
 </script>
 </body>
 </html>
-
 
 
 
