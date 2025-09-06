@@ -256,47 +256,71 @@ function getSelectedDateRange() {
 
 // ボタン押下 → fetch試行 → 失敗時はファイル選択へ
 document.getElementById("btn").addEventListener("click", async () => {
+  // ローディング表示、ファイル選択UIは一旦非表示
   document.getElementById("loadingMessage").style.display = "block";
   document.getElementById("fileLabel").style.display = "none";
 
   const { start, end } = getSelectedDateRange();
 
   try {
-    const csvText = await fetch("izumo_2025_sun_data.csv").then(res => {
-      if (!res.ok) throw new Error("fetch failed");
-      return res.text();
-    });
+    const response = await fetch("izumo_2025_sun_data.csv");
+
+    // fetch失敗（404など）を明示的に判定
+    if (!response.ok) {
+      throw new Error(`CSVファイル取得失敗: ${response.status}`);
+    }
+
+    const csvText = await response.text();
     processCSV(csvText, start, end);
   } catch (err) {
     console.warn("fetch失敗。ローカルCSVを選択してください。", err);
+
+    // ローディング非表示 → ファイル選択UI表示
     document.getElementById("loadingMessage").style.display = "none";
-    document.getElementById("fileLabel").style.display = "inline";
+    document.getElementById("fileLabel").style.display = "block"; // blockで改行表示
   }
 });
 
 // ローカルCSV選択 → SJIS変換 → 処理へ
 document.getElementById("csvFile").addEventListener("change", (e) => {
   const file = e.target.files[0];
-  if (!file) return;
+  if (!file) {
+    console.warn("ファイルが選択されていません。");
+    return;
+  }
 
   const reader = new FileReader();
   reader.onload = () => {
     try {
+      // Encoding.js が読み込まれているか確認
+      if (typeof Encoding === "undefined") {
+        throw new Error("Encoding.js が読み込まれていません。");
+      }
+
       const sjisArray = new Uint8Array(reader.result);
       const utf8Text = Encoding.convert(sjisArray, {
         to: 'UNICODE',
         from: 'SJIS',
         type: 'string'
       });
+
+      // 変換結果の妥当性チェック
+      if (!utf8Text || utf8Text.length < 10) {
+        throw new Error("変換後のCSVテキストが不正です。");
+      }
+
       const { start, end } = getSelectedDateRange();
       processCSV(utf8Text, start, end);
     } catch (err) {
       console.error("SJIS変換失敗:", err);
-      alert("CSVファイルの文字コード変換に失敗しました。");
+      alert("CSVファイルの文字コード変換に失敗しました。別のファイルを選択してください。");
+      document.getElementById("loadingMessage").style.display = "none";
     }
   };
+
   reader.readAsArrayBuffer(file);
 });
+
 
 // CSVテキストを解析して表とグラフを生成
 function processCSV(csvText, startDateStr, endDateStr) {
@@ -382,6 +406,7 @@ function renderChart(labels, daylightHours, nightHours) {
 </script>
 </body>
 </html>
+
 
 
 
