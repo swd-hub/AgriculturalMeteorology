@@ -218,6 +218,9 @@ input[type="date"] {
   </div>
 
 <script>
+// グローバル変数としてローカルCSV内容を保持
+window.localCSVText = null;
+
 // "03-05" のように MM-DD 形式へ
 function toMMDD(month, day) {
   return String(month).padStart(2, "0") + "-" + String(day).padStart(2, "0");
@@ -247,29 +250,38 @@ function getSelectedDateRange() {
   return { start, end };
 }
 
-// ボタン押下 → fetch試行 → 失敗時はファイル選択へ
+// 実行ボタン
 document.getElementById("btn").addEventListener("click", async () => {
   document.getElementById("loadingMessage").style.display = "block";
-  // document.getElementById("fileLabel").style.display = "none"; ← これを削除
   const { start, end } = getSelectedDateRange();
+
+  // まずローカルCSVがあればそれを優先
+  if (window.localCSVText) {
+    processCSV(window.localCSVText, start, end);
+    document.getElementById("loadingMessage").style.display = "none";
+    return;
+  }
+
+  // なければfetch
   try {
     const response = await fetch("izumo_2025_sun_data.csv");
     if (!response.ok) throw new Error(`CSVファイル取得失敗: ${response.status}`);
     const csvText = await response.text();
     processCSV(csvText, start, end);
-    document.getElementById("fileLabel").style.display = "none"; // 成功時は隠す（成功時のみ！）
+    document.getElementById("fileLabel").style.display = "none";
   } catch (err) {
     console.warn("fetch失敗。ローカルCSVを選択してください。", err);
     document.getElementById("loadingMessage").style.display = "none";
-    document.getElementById("fileLabel").style.display = "block"; // 失敗時のみ表示
+    document.getElementById("fileLabel").style.display = "block";
   }
 });
 
-// ローカルCSV選択 → SJIS変換 → 処理へ
+// ローカルCSV選択 → SJIS変換 → グローバル保存
 document.getElementById("csvFile").addEventListener("change", (e) => {
   const file = e.target.files[0];
   if (!file) {
     console.warn("ファイルが選択されていません。");
+    window.localCSVText = null;
     return;
   }
   const reader = new FileReader();
@@ -287,13 +299,14 @@ document.getElementById("csvFile").addEventListener("change", (e) => {
       if (!utf8Text || utf8Text.length < 10) {
         throw new Error("変換後のCSVテキストが不正です。");
       }
-      const { start, end } = getSelectedDateRange();
-      document.getElementById("loadingMessage").style.display = "block";
-      processCSV(utf8Text, start, end);
+      window.localCSVText = utf8Text; // ←グローバルへ保存
+      // 自動実行はしない（実行ボタンで反映）
+      alert("CSVファイルが読み込まれました。「実行」ボタンを押してください。");
     } catch (err) {
       console.error("SJIS変換失敗:", err);
       alert("CSVファイルの文字コード変換に失敗しました。別のファイルを選択してください。");
       document.getElementById("loadingMessage").style.display = "none";
+      window.localCSVText = null;
     }
   };
   reader.readAsArrayBuffer(file);
@@ -322,9 +335,9 @@ function processCSV(csvText, startDateStr, endDateStr) {
         <td>${night}</td>
       `;
       tableBody.appendChild(tr);
-      labels.push(date);
       nightHours.push(Number(parseJapaneseDuration(night).toFixed(2)));
       daylightHours.push(Number(parseJapaneseDuration(daylight).toFixed(2)));
+      labels.push(date);
     }
   });
   renderChart(labels, daylightHours, nightHours);
@@ -375,6 +388,7 @@ function renderChart(labels, daylightHours, nightHours) {
 </script>
 </body>
 </html>
+
 
 
 
