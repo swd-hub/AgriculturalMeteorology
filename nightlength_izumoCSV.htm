@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
@@ -221,26 +221,37 @@ input[type="date"] {
 <script>
   // "03-05" のように MM-DD 形式へ
   function toMMDD(month, day) {
-    return String(month).padStart(2, "0") + "-" + String(day).padStart(2, "0");
+    const str = String(month).padStart(2, "0") + "-" + String(day).padStart(2, "0");
+    console.log("[toMMDD] month:", month, "day:", day, "->", str);
+    return str;
   }
 
   // CSVの日付を "YYYY/MM/DD" → "MM-DD"
   function normalizeDate(dateStr) {
     const [y, m, d] = dateStr.split("/");
-    return `${m.padStart(2,"0")}-${d.padStart(2,"0")}`;
+    const mmdd = `${m?.padStart(2,"0")}-${d?.padStart(2,"0")}`;
+    console.log("[normalizeDate] input:", dateStr, "->", mmdd);
+    return mmdd;
   }
 
   function parseJapaneseDuration(text) {
     const h = parseFloat(text.match(/(\d+)時間/)?.[1] || 0);
     const m = parseFloat(text.match(/(\d+)分/)?.[1] || 0);
     const s = parseFloat(text.match(/(\d+)秒/)?.[1] || 0);
-    return h + m / 60 + s / 3600;
+    const total = h + m / 60 + s / 3600;
+    console.log("[parseJapaneseDuration] input:", text, "->", total);
+    return total;
   }
 
-  document.getElementById("btn").addEventListener("click", async () => {
-    document.getElementById("loadingMessage").style.display = "block";
-    document.getElementById("fileLabel").style.display = "none";
+  let csvTextCache = null; // ファイル選択で記憶したCSVテキスト
 
+  document.getElementById("btn").addEventListener("click", () => {
+    document.getElementById("loadingMessage").style.display = "block";
+    if (!csvTextCache) {
+      document.getElementById("loadingMessage").style.display = "none";
+      alert("CSVファイルを選択してください。");
+      return;
+    }
     const startDateStr = toMMDD(
       document.getElementById("start-month").value,
       document.getElementById("start-day").value
@@ -249,39 +260,29 @@ input[type="date"] {
       document.getElementById("end-month").value,
       document.getElementById("end-day").value
     );
-
-    try {
-      const csvText = await fetch("izumo_2025_sun_data.csv").then(res => {
-        if (!res.ok) throw new Error("fetch failed");
-        return res.text();
-      });
-      processCSV(csvText, startDateStr, endDateStr);
-    } catch (err) {
-      document.getElementById("loadingMessage").style.display = "none";
-      document.getElementById("fileLabel").style.display = "block";
-      console.warn("fetch失敗。ローカルCSVを選択してください。");
-    }
+    console.log("[btn click] startDateStr:", startDateStr, "endDateStr:", endDateStr);
+    processCSV(csvTextCache, startDateStr, endDateStr);
   });
 
-  document.getElementById("csvFile").addEventListener("change", (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const sjisArray = new Uint8Array(reader.result);
-      const utf8Text = Encoding.convert(sjisArray, {to:'UNICODE', from:'SJIS', type:'string'});
-      const startDateStr = toMMDD(
-        document.getElementById("start-month").value,
-        document.getElementById("start-day").value
-      );
-      const endDateStr = toMMDD(
-        document.getElementById("end-month").value,
-        document.getElementById("end-day").value
-      );
-      processCSV(utf8Text, startDateStr, endDateStr);
-    };
-    reader.readAsArrayBuffer(file);
-  });
+document.getElementById("csvFile").addEventListener("change", (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  document.getElementById("loadingMessage").style.display = "block";
+  const reader = new FileReader();
+  reader.onload = () => {
+    const bytes = new Uint8Array(reader.result);
+    const detected = Encoding.detect(bytes);
+    console.log("[csvFile change] detected encoding:", detected);
+    // ここを自動判別に
+    const utf8Text = Encoding.convert(bytes, {to:'UNICODE', from:detected, type:'string'});
+    csvTextCache = utf8Text;
+    console.log("[csvFile change] 変換後 length:", utf8Text.length);
+    console.log("[csvFile change] 変換後 preview:\n", utf8Text.slice(0,500));
+    document.getElementById("loadingMessage").style.display = "none";
+    document.getElementById("fileLabel").style.display = "none";
+  };
+  reader.readAsArrayBuffer(file);
+});;
 
   function processCSV(csvText, startDateStr, endDateStr) {
     const tableBody = document.querySelector('#resultTable tbody');
@@ -291,13 +292,32 @@ input[type="date"] {
     let nightHours = [];
     let daylightHours = [];
 
-    const rows = csvText.trim().split("\n").slice(1);
-    rows.forEach(row => {
-      const cols = row.split(",");
-      if (cols.length < 5) return;
+    // 改行コードを柔軟に対応
+    const rows = csvText.trim().split(/\r?\n/);
+    console.log("[processCSV] rows.length:", rows.length);
+
+    // 1行目ヘッダーなら除外
+    if (rows[0] && (rows[0].includes("日付") || rows[0].includes("日出"))) {
+      console.log("[processCSV] ヘッダー検出:", rows[0]);
+      rows.shift();
+    }
+
+    rows.forEach((row, i) => {
+      if (!row.trim()) {
+        console.log(`[processCSV] skip 空行: row[${i}]`);
+        return;
+      }
+      // カンマ区切り+トリム
+      const cols = row.split(",").map(x => x.trim());
+      console.log(`[processCSV] row[${i}] cols:`, cols);
+
+      if (cols.length < 5) {
+        console.warn(`[processCSV] cols.length < 5 skip: row[${i}]`, cols);
+        return;
+      }
 
       const [rawDate, sunrise, sunset, daylight, night] = cols;
-      const date = normalizeDate(rawDate); // "MM-DD"
+      const date = normalizeDate(rawDate);
 
       if (date >= startDateStr && date <= endDateStr) {
         const tr = document.createElement("tr");
@@ -313,8 +333,14 @@ input[type="date"] {
         labels.push(date);
         nightHours.push(Number(parseJapaneseDuration(night).toFixed(2)));
         daylightHours.push(Number(parseJapaneseDuration(daylight).toFixed(2)));
+      } else {
+        console.log(`[processCSV] date out of range: ${date} (${startDateStr}～${endDateStr})`);
       }
     });
+
+    console.log("[processCSV] labels:", labels);
+    console.log("[processCSV] daylightHours:", daylightHours);
+    console.log("[processCSV] nightHours:", nightHours);
 
     renderChart(labels, daylightHours, nightHours);
     document.getElementById("loadingMessage").style.display = "none";
@@ -323,6 +349,10 @@ input[type="date"] {
   function renderChart(labels, daylightHours, nightHours) {
     const ctx = document.getElementById('daylightChart').getContext('2d');
     if (window.daylightChartObj?.destroy) window.daylightChartObj.destroy();
+
+    console.log("[renderChart] labels:", labels);
+    console.log("[renderChart] daylightHours:", daylightHours);
+    console.log("[renderChart] nightHours:", nightHours);
 
     window.daylightChartObj = new Chart(ctx, {
       type: 'line',
@@ -364,6 +394,3 @@ input[type="date"] {
 </script>
 </body>
 </html>
-
-
-
