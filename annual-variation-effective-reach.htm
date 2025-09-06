@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>積算温度到達日予測</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+body {
+  font-family: "Segoe UI", "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;
+  margin: 20px;
+  line-height: 1.6;
+  background: #f5f7f7;
+  color: #333;
+}
+
+/* ===== 見出し ===== */
+h1, h2, h3, h4 {
+  background-color: #4CAF50;
+  color: white;
+  padding: 8px 12px;
+  border-radius: 4px;
+  width: fit-content;
+  margin: 10px 0;
+}
+h1 { text-align: center; }
+
+/* ===== 入力フォーム ===== */
+form, .input-panel {
+  margin: 15px 0;
+  padding: 10px 15px;
+  background-color: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  display: flex;          /* 横並び */
+  flex-wrap: wrap;        /* はみ出す場合は折り返し */
+  gap: 10px 15px;         /* 項目間の余白 */
+  align-items: center;    /* 縦位置を中央揃え */
+}
+
+.input-panel label {
+  display: flex;
+  align-items: center;
+  font-weight: bold;
+  font-size: 14px;
+  white-space: nowrap; /* ラベルを折り返さない */
+}
+
+.input-panel input[type="date"],
+.input-panel input[type="file"],
+.input-panel input[type="number"] {
+  width: auto;        /* 必要な幅だけ */
+  min-width: 70px;    /* 数値用は最小幅確保 */
+  padding: 4px 6px;
+  font-size: 14px;
+  margin-left: 4px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+.input-panel button {
+  background-color: #4CAF50;
+  color: white;
+  padding: 6px 14px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+.input-panel button:hover {
+  background-color: #45a049;
+}
+/* ===== レイアウト ===== */
+.container {
+  display: flex;
+  gap: 20px;
+  margin-top: 10px;     /* ← 20px → 10px に縮めた */
+  flex-wrap: wrap;
+  align-items: flex-start; /* グラフと表の上端を揃える */
+}
+
+.table-container, .chart-container {
+  flex: 1;
+  background: #fff;
+  padding: 15px;
+  border-radius: 8px;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+  min-width: 300px;
+}
+
+/* ===== テーブル ===== */
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 14px;
+  margin-top: 10px;
+}
+th, td {
+  border: 1px solid #ccc;
+  padding: 8px;
+  text-align: center;
+}
+th {
+  background: #f1f1f1;
+}
+tr:nth-child(even) td {
+  background: #fafafa;
+}
+
+/* ===== チャート ===== */
+.chart-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+.chart-container canvas {
+  width: 100% !important;
+  height: auto !important;
+}
+
+/* ===== 印刷用 ===== */
+@media print {
+  * { margin: 0; padding: 0; }
+  .table-container, h5, .no-print, img { display: none; }
+  .chart-container, .content {
+    page-break-inside: avoid;
+    page-break-before: auto;
+    page-break-after: auto;
+  }
+}
+
+  </style>
+</head>
+<body>
+  <h2>積算温度到達日表示</h2>
+
+  <div>
+  <br>
+    <label>CSVファイル読み込み: 
+      <input type="file" id="fileInput">
+    </label>
+  </div>
+  <div>
+    <label>開始日: <input type="date" id="startDate"></label><br><br>
+    <label>目標積算温度(℃): <input type="number" id="targetTemp" value="1000"></label><br><br>
+    <label>有効温度下限(℃): <input type="number" id="tempMin" value="10"></label><br>
+    <label>有効温度上限(℃): <input type="number" id="tempMax" value="30"></label><br><br>
+    <label>
+      <input type="checkbox" id="useUpperLimit" checked>
+      上限超過は無効とする
+    </label>
+    <button onclick="analyze()">計算</button>
+  </div>
+
+  <div class="container">
+    <div class="table-container">
+      <h3>年ごとの到達日一覧</h3>
+      <table id="resultTable">
+        <tr><th>年</th><th>到達日数</th><th>到達日</th></tr>
+      </table>
+    </div>
+    <div class="chart-container">
+      <canvas id="chart"></canvas>
+    </div>
+  </div>
+
+<script>
+  let weatherData = [];
+
+window.addEventListener("DOMContentLoaded", () => {
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const jan1 = new Date(currentYear, 0, 1); // 1月1日
+  const yyyy = jan1.getFullYear();
+  const mm = String(jan1.getMonth() + 1).padStart(2, "0");
+  const dd = String(jan1.getDate()).padStart(2, "0");
+  const formatted = `${yyyy}-${mm}-${dd}`;
+  document.getElementById("startDate").value = formatted;
+});
+
+
+  // CSV読み込み
+  document.getElementById('fileInput').addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = evt => {
+      const text = evt.target.result;
+      weatherData = parseCSV(text);
+      // alert("CSVを読み込みました"); ← 削除
+    };
+    reader.readAsText(file, "Shift-JIS");
+  });
+
+  // CSVをパース
+  function parseCSV(text) {
+    const lines = text.trim().split("\n");
+    const headers = lines[2].split(","); // 実データのヘッダー行
+    const yearIndex = headers.findIndex(h => h === "年");
+    const monthIndex = headers.findIndex(h => h === "月");
+    const dayIndex = headers.findIndex(h => h === "日");
+    const tempIndex = headers.findIndex(h => h === "平均気温(℃)");
+
+    if ([yearIndex, monthIndex, dayIndex, tempIndex].includes(-1)) {
+      alert("CSVの列名が正しく認識できません");
+      return [];
+    }
+
+    let data = [];
+    for (let i = 3; i < lines.length; i++) { // 実データは4行目から
+      const cells = lines[i].split(",");
+      const year = parseInt(cells[yearIndex]);
+      const month = parseInt(cells[monthIndex]);
+      const day = parseInt(cells[dayIndex]);
+      const temp = parseFloat(cells[tempIndex]);
+      const date = new Date(year, month - 1, day);
+
+      if (!isNaN(temp)) {
+        data.push({ date, temp });
+      }
+    }
+    return data;
+  }
+
+  // 計算実行
+  function analyze() {
+    if (weatherData.length === 0) {
+      alert("先にCSVを読み込んでください");
+      return;
+    }
+
+    const startDateInput = new Date(document.getElementById("startDate").value);
+    const targetTemp = parseFloat(document.getElementById("targetTemp").value);
+    const tempMin = parseFloat(document.getElementById("tempMin").value);
+    const tempMax = parseFloat(document.getElementById("tempMax").value);
+    const useUpperLimit = document.getElementById("useUpperLimit").checked;
+
+    // 年ごとに計算
+    const results = {};
+    const startMonth = startDateInput.getMonth();
+    const startDay = startDateInput.getDate();
+
+    weatherData.forEach(row => {
+      const year = row.date.getFullYear();
+      const startDate = new Date(year, startMonth, startDay);
+
+      if (row.date >= startDate) {
+        if (!results[year]) {
+          results[year] = { total: 0, reached: false, days: 0, date: null };
+        }
+
+        if (!results[year].reached) {
+          let effTemp = 0;
+
+          if (row.temp >= tempMin) {
+            let adjusted = row.temp;
+
+            // 上限処理
+            if (useUpperLimit && row.temp > tempMax) {
+              adjusted = tempMax;
+            } else if (!useUpperLimit && row.temp > tempMax) {
+              adjusted = NaN; // 超過分は無効扱い
+            }
+
+            if (!isNaN(adjusted) && adjusted >= tempMin) {
+              effTemp = adjusted - tempMin;
+            }
+          }
+
+          results[year].total += effTemp;
+          results[year].days++;
+
+          if (results[year].total >= targetTemp) {
+            results[year].reached = true;
+            results[year].date = row.date;
+          }
+        }
+      }
+    });
+
+    // 表に出力
+    const table = document.getElementById("resultTable");
+    table.innerHTML = "<tr><th>年</th><th>到達日数</th><th>到達日</th></tr>";
+    const labels = [];
+    const values = [];
+
+    for (const year in results) {
+      if (results[year].reached) {
+        const d = results[year].date;
+        const dStr =
+          d.getFullYear() + "-" +
+          (d.getMonth() + 1).toString().padStart(2, "0") + "-" +
+          d.getDate().toString().padStart(2, "0");
+        table.innerHTML += `<tr><td>${year}</td><td>${results[year].days}</td><td>${dStr}</td></tr>`;
+        labels.push(year);
+        values.push(results[year].days);
+      }
+    }
+
+    // グラフ表示
+    const ctx = document.getElementById("chart").getContext("2d");
+    if (window.resultChart) {
+      window.resultChart.destroy(); // 既存グラフを破棄して再描画
+    }
+    window.resultChart = new Chart(ctx, {
+      type: "line",
+      data: {
+        labels,
+        datasets: [{
+          label: "目標積算温度到達日数",
+          data: values,
+          borderColor: "red",
+          borderWidth: 2,
+          fill: false
+        }]
+      },
+      options: {
+        responsive: true,
+        scales: {
+          y: { title: { display: true, text: "日数" } },
+          x: { title: { display: true, text: "年" } }
+        }
+      }
+    });
+  }
+</script>
+</body>
+</html>
