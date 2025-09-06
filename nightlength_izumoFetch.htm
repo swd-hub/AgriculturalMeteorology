@@ -218,26 +218,23 @@ input[type="date"] {
   </div>
 
 <script>
-// グローバル変数としてローカルCSV内容を保持
+// グローバル変数でローカルCSV内容を保持
 window.localCSVText = null;
 
 // "03-05" のように MM-DD 形式へ
 function toMMDD(month, day) {
   return String(month).padStart(2, "0") + "-" + String(day).padStart(2, "0");
 }
-// CSVの日付を "YYYY/MM/DD" → "MM-DD"
 function normalizeDate(dateStr) {
   const [y, m, d] = dateStr.split("/");
   return `${m.padStart(2,"0")}-${d.padStart(2,"0")}`;
 }
-// "○時間○分○秒" → 時間（小数）
 function parseJapaneseDuration(text) {
   const h = parseFloat(text.match(/(\d+)時間/)?.[1] || 0);
   const m = parseFloat(text.match(/(\d+)分/)?.[1] || 0);
   const s = parseFloat(text.match(/(\d+)秒/)?.[1] || 0);
   return h + m / 60 + s / 3600;
 }
-// 入力された開始・終了日をMM-DD形式で取得
 function getSelectedDateRange() {
   const start = toMMDD(
     document.getElementById("start-month").value,
@@ -255,14 +252,14 @@ document.getElementById("btn").addEventListener("click", async () => {
   document.getElementById("loadingMessage").style.display = "block";
   const { start, end } = getSelectedDateRange();
 
-  // まずローカルCSVがあればそれを優先
+  // 1.ローカルCSVがあればそれを使う
   if (window.localCSVText) {
     processCSV(window.localCSVText, start, end);
     document.getElementById("loadingMessage").style.display = "none";
     return;
   }
 
-  // なければfetch
+  // 2.なければfetch
   try {
     const response = await fetch("izumo_2025_sun_data.csv");
     if (!response.ok) throw new Error(`CSVファイル取得失敗: ${response.status}`);
@@ -276,7 +273,7 @@ document.getElementById("btn").addEventListener("click", async () => {
   }
 });
 
-// ローカルCSV選択 → SJIS変換 → グローバル保存
+// ローカルCSV選択→SJIS変換→グローバル保存
 document.getElementById("csvFile").addEventListener("change", (e) => {
   const file = e.target.files[0];
   if (!file) {
@@ -299,8 +296,7 @@ document.getElementById("csvFile").addEventListener("change", (e) => {
       if (!utf8Text || utf8Text.length < 10) {
         throw new Error("変換後のCSVテキストが不正です。");
       }
-      window.localCSVText = utf8Text; // ←グローバルへ保存
-      // 自動実行はしない（実行ボタンで反映）
+      window.localCSVText = utf8Text; // グローバルへ保存
       alert("CSVファイルが読み込まれました。「実行」ボタンを押してください。");
     } catch (err) {
       console.error("SJIS変換失敗:", err);
@@ -388,6 +384,7 @@ function renderChart(labels, daylightHours, nightHours) {
 </script>
 </body>
 </html>
+
 
 
 
