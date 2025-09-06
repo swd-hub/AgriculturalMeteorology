@@ -181,7 +181,10 @@ input[type="date"] {
 <body>
   <h1>出雲市の日出・日入・夜間長</h1>
  <br><br>
-<label id="fileLabel">CSVファイルを選択: <input type="file" id="csvFile"></label>
+<label id="fileLabel" style="display:none">
+  CSVファイルを選択: <input type="file" id="csvFile" accept=".csv">
+</label>
+
   <br><br>
   <!-- 入力を月＋日で分ける -->
 <label>開始日: 
@@ -218,152 +221,167 @@ input[type="date"] {
     </div>
   </div>
 
-<script>
-  // "03-05" のように MM-DD 形式へ
-  function toMMDD(month, day) {
-    return String(month).padStart(2, "0") + "-" + String(day).padStart(2, "0");
+<script>// "03-05" のように MM-DD 形式へ
+function toMMDD(month, day) {
+  return String(month).padStart(2, "0") + "-" + String(day).padStart(2, "0");
+}
+
+// CSVの日付を "YYYY/MM/DD" → "MM-DD"
+function normalizeDate(dateStr) {
+  const [y, m, d] = dateStr.split("/");
+  return `${m.padStart(2,"0")}-${d.padStart(2,"0")}`;
+}
+
+// "○時間○分○秒" → 時間（小数）
+function parseJapaneseDuration(text) {
+  const h = parseFloat(text.match(/(\d+)時間/)?.[1] || 0);
+  const m = parseFloat(text.match(/(\d+)分/)?.[1] || 0);
+  const s = parseFloat(text.match(/(\d+)秒/)?.[1] || 0);
+  return h + m / 60 + s / 3600;
+}
+
+// 入力された開始・終了日をMM-DD形式で取得
+function getSelectedDateRange() {
+  const start = toMMDD(
+    document.getElementById("start-month").value,
+    document.getElementById("start-day").value
+  );
+  const end = toMMDD(
+    document.getElementById("end-month").value,
+    document.getElementById("end-day").value
+  );
+  return { start, end };
+}
+
+// ボタン押下 → fetch試行 → 失敗時はファイル選択へ
+document.getElementById("btn").addEventListener("click", async () => {
+  document.getElementById("loadingMessage").style.display = "block";
+  document.getElementById("fileLabel").style.display = "none";
+
+  const { start, end } = getSelectedDateRange();
+
+  try {
+    const csvText = await fetch("izumo_2025_sun_data.csv").then(res => {
+      if (!res.ok) throw new Error("fetch failed");
+      return res.text();
+    });
+    processCSV(csvText, start, end);
+  } catch (err) {
+    console.warn("fetch失敗。ローカルCSVを選択してください。", err);
+    document.getElementById("loadingMessage").style.display = "none";
+    document.getElementById("fileLabel").style.display = "inline";
   }
+});
 
-  // CSVの日付を "YYYY/MM/DD" → "MM-DD"
-  function normalizeDate(dateStr) {
-    const [y, m, d] = dateStr.split("/");
-    return `${m.padStart(2,"0")}-${d.padStart(2,"0")}`;
-  }
+// ローカルCSV選択 → SJIS変換 → 処理へ
+document.getElementById("csvFile").addEventListener("change", (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
 
-  function parseJapaneseDuration(text) {
-    const h = parseFloat(text.match(/(\d+)時間/)?.[1] || 0);
-    const m = parseFloat(text.match(/(\d+)分/)?.[1] || 0);
-    const s = parseFloat(text.match(/(\d+)秒/)?.[1] || 0);
-    return h + m / 60 + s / 3600;
-  }
-
-  document.getElementById("btn").addEventListener("click", async () => {
-    document.getElementById("loadingMessage").style.display = "block";
-    document.getElementById("fileLabel").style.display = "none";
-
-    const startDateStr = toMMDD(
-      document.getElementById("start-month").value,
-      document.getElementById("start-day").value
-    );
-    const endDateStr = toMMDD(
-      document.getElementById("end-month").value,
-      document.getElementById("end-day").value
-    );
-
+  const reader = new FileReader();
+  reader.onload = () => {
     try {
-      const csvText = await fetch("izumo_2025_sun_data.csv").then(res => {
-        if (!res.ok) throw new Error("fetch failed");
-        return res.text();
+      const sjisArray = new Uint8Array(reader.result);
+      const utf8Text = Encoding.convert(sjisArray, {
+        to: 'UNICODE',
+        from: 'SJIS',
+        type: 'string'
       });
-      processCSV(csvText, startDateStr, endDateStr);
+      const { start, end } = getSelectedDateRange();
+      processCSV(utf8Text, start, end);
     } catch (err) {
-      document.getElementById("loadingMessage").style.display = "none";
-      document.getElementById("fileLabel").style.display = "block";
-      console.warn("fetch失敗。ローカルCSVを選択してください。");
+      console.error("SJIS変換失敗:", err);
+      alert("CSVファイルの文字コード変換に失敗しました。");
+    }
+  };
+  reader.readAsArrayBuffer(file);
+});
+
+// CSVテキストを解析して表とグラフを生成
+function processCSV(csvText, startDateStr, endDateStr) {
+  const tableBody = document.querySelector('#resultTable tbody');
+  tableBody.innerHTML = "";
+
+  let labels = [];
+  let nightHours = [];
+  let daylightHours = [];
+
+  const rows = csvText.trim().split("\n").slice(1);
+  rows.forEach(row => {
+    const cols = row.split(",");
+    if (cols.length < 5) return;
+
+    const [rawDate, sunrise, sunset, daylight, night] = cols;
+    const date = normalizeDate(rawDate); // "MM-DD"
+
+    if (date >= startDateStr && date <= endDateStr) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${date}</td>
+        <td>${sunrise}</td>
+        <td>${sunset}</td>
+        <td>${daylight}</td>
+        <td>${night}</td>
+      `;
+      tableBody.appendChild(tr);
+
+      labels.push(date);
+      nightHours.push(Number(parseJapaneseDuration(night).toFixed(2)));
+      daylightHours.push(Number(parseJapaneseDuration(daylight).toFixed(2)));
     }
   });
 
-  document.getElementById("csvFile").addEventListener("change", (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const sjisArray = new Uint8Array(reader.result);
-      const utf8Text = Encoding.convert(sjisArray, {to:'UNICODE', from:'SJIS', type:'string'});
-      const startDateStr = toMMDD(
-        document.getElementById("start-month").value,
-        document.getElementById("start-day").value
-      );
-      const endDateStr = toMMDD(
-        document.getElementById("end-month").value,
-        document.getElementById("end-day").value
-      );
-      processCSV(utf8Text, startDateStr, endDateStr);
-    };
-    reader.readAsArrayBuffer(file);
-  });
+  renderChart(labels, daylightHours, nightHours);
+  document.getElementById("loadingMessage").style.display = "none";
+}
 
-  function processCSV(csvText, startDateStr, endDateStr) {
-    const tableBody = document.querySelector('#resultTable tbody');
-    tableBody.innerHTML = "";
+// Chart.jsで昼間長・夜間長を描画
+function renderChart(labels, daylightHours, nightHours) {
+  const ctx = document.getElementById('daylightChart').getContext('2d');
+  if (window.daylightChartObj?.destroy) window.daylightChartObj.destroy();
 
-    let labels = [];
-    let nightHours = [];
-    let daylightHours = [];
-
-    const rows = csvText.trim().split("\n").slice(1);
-    rows.forEach(row => {
-      const cols = row.split(",");
-      if (cols.length < 5) return;
-
-      const [rawDate, sunrise, sunset, daylight, night] = cols;
-      const date = normalizeDate(rawDate); // "MM-DD"
-
-      if (date >= startDateStr && date <= endDateStr) {
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-          <td>${date}</td>
-          <td>${sunrise}</td>
-          <td>${sunset}</td>
-          <td>${daylight}</td>
-          <td>${night}</td>
-        `;
-        tableBody.appendChild(tr);
-
-        labels.push(date);
-        nightHours.push(Number(parseJapaneseDuration(night).toFixed(2)));
-        daylightHours.push(Number(parseJapaneseDuration(daylight).toFixed(2)));
-      }
-    });
-
-    renderChart(labels, daylightHours, nightHours);
-    document.getElementById("loadingMessage").style.display = "none";
-  }
-
-  function renderChart(labels, daylightHours, nightHours) {
-    const ctx = document.getElementById('daylightChart').getContext('2d');
-    if (window.daylightChartObj?.destroy) window.daylightChartObj.destroy();
-
-    window.daylightChartObj = new Chart(ctx, {
-      type: 'line',
-      data: {
-        labels: labels,
-        datasets: [
-          {
-            label: '昼間長（時間）',
-            data: daylightHours,
-            borderColor: '#f5a623',
-            backgroundColor: 'rgba(245,166,35,0.13)',
-            pointBackgroundColor: '#f5a623',
-            pointRadius: 3,
-            tension: 0.28
-          },
-          {
-            label: '夜間長（時間）',
-            data: nightHours,
-            borderColor: '#2976d6',
-            backgroundColor: 'rgba(41,118,214,0.13)',
-            pointBackgroundColor: '#2976d6',
-            pointRadius: 3,
-            tension: 0.28
-          }
-        ]
-      },
-      options: {
-        responsive: true,
-        plugins: {
-          title: { display: true, text: '昼間長と夜間長の推移' }
+  window.daylightChartObj = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [
+        {
+          label: '昼間長（時間）',
+          data: daylightHours,
+          borderColor: '#f5a623',
+          backgroundColor: 'rgba(245,166,35,0.13)',
+          pointBackgroundColor: '#f5a623',
+          pointRadius: 3,
+          tension: 0.28
         },
-        scales: {
-          x: { title: { display: true, text: '月日' } },
-          y: { min:0, max:24, ticks:{stepSize:2}, title:{display:true,text:'時間(h)'} }
+        {
+          label: '夜間長（時間）',
+          data: nightHours,
+          borderColor: '#2976d6',
+          backgroundColor: 'rgba(41,118,214,0.13)',
+          pointBackgroundColor: '#2976d6',
+          pointRadius: 3,
+          tension: 0.28
         }
+      ]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        title: { display: true, text: '昼間長と夜間長の推移' }
+      },
+      scales: {
+        x: { title: { display: true, text: '月日' } },
+        y: { min: 0, max: 24, ticks: { stepSize: 2 }, title: { display: true, text: '時間(h)' } }
       }
-    });
-  }
+    }
+  });
+}
+
 </script>
 </body>
 </html>
+
 
 
 
