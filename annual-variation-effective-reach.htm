@@ -305,24 +305,7 @@ function analyze() {
     };
   });
 
-  // === 翌年に繰り返す処理 ===
-  const repeated = {};
-  for (const y of Object.keys(results)) {
-    const r = results[y];
-    if (r.reached) {
-      const nextYear = parseInt(y) + 1;
-      const d = new Date(r.date);
-      d.setFullYear(nextYear); // 翌年の日付にずらす
-      repeated[nextYear] = {
-        reached: true,
-        days: r.days,
-        date: d
-      };
-    }
-  }
-  Object.assign(results, repeated);
-
-  // === 表に出力 ===
+  // 表に出力
   const table = document.getElementById("resultTable");
   table.innerHTML = "<tr><th>年</th><th>到達日数</th><th>到達日</th></tr>";
   const labels = [];
@@ -344,7 +327,7 @@ function analyze() {
     }
   }
 
-  // === グラフ表示 ===
+  // グラフ表示
   const ctx = document.getElementById("chart").getContext("2d");
   if (window.resultChart) {
     window.resultChart.destroy();
@@ -386,10 +369,8 @@ function analyze() {
     }
   });
 }
-
 </script>
 
 
 </body>
 </html>
-
