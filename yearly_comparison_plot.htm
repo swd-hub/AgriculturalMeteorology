@@ -9,24 +9,28 @@
   <title>気象経過</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@latest"></script>
-  <style>
+<style>
+/* --- 根本的な揺れ防止対策 --- */
+html {
+  /* 常にスクロールバーの領域を確保し、グラフ出現時の横揺れを防ぐ */
+  overflow-y: scroll;
+}
+
 /* 印刷用の設定 */
 @media print {
-  * {
-    margin: 0;
-    padding: 0;
-  }
-  input,
-  button,
-  select,
-  label,
-  form,
-  h5,
-  h3,
-  .right-align,
-  .container {
+  * { margin: 0; padding: 0; }
+  input, button, select, label, form, h5, h3, .right-align, .container {
     display: none !important;
   }
+}
+
+/* 全体の基本設定 */
+body {
+  font-family: sans-serif;
+  margin: 0;
+  padding: 0;
+  background-color: #f4f4f4;
+  color: #333;
 }
 
 /* ボタンのスタイル */
@@ -39,15 +43,12 @@ button {
   cursor: pointer;
 }
 
-button:hover {
-  background-color: #45a049;
-}
+button:hover { background-color: #45a049; }
 
 /* フォームのスタイル */
 form {
-  flex: 1;
   margin: 20px;
-  padding: 40px;
+  padding: 20px;
   background-color: white;
   border-radius: 8px;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
@@ -62,18 +63,10 @@ h1 {
   margin: 0;
 }
 
-h3, h5 {
-  margin: 20px 0 10px 0;
-  color: #333;
-}
+h3, h5 { margin: 20px 0 10px 0; }
+h5 { font-size: 14px; color: #666; font-weight: normal; }
 
-h5 {
-  font-size: 14px;
-  color: #666;
-  font-weight: normal;
-}
-
-/* ラベル内の input と button を横並びにする */
+/* ラベルの調整 */
 label {
   display: inline-flex;
   align-items: center;
@@ -82,20 +75,25 @@ label {
   margin-bottom: 10px;
 }
 
-/* チャートの親要素 */
+/* --- 揺れ防止の重要ポイント --- */
 .chart-container {
   width: 100%;
   position: relative;
+  /* グラフが描画される前の高さを予約（ガタつき防止） */
+  min-height: 350px; 
+  aspect-ratio: 16 / 9; /* 比率を固定して安定させる */
+  margin-bottom: 30px;
+  background-color: #fff;
+  border-radius: 8px;
 }
 
-/* キャンバス（グラフ） */
 canvas {
   width: 100% !important;
-  height: auto !important;
-  margin-bottom: 30px;
+  height: 100% !important; /* コンテナいっぱいに広げる */
+  display: block;
 }
 
-/* フレックスレイアウトで要素を並べる */
+/* コンテナ */
 .container {
   display: flex;
   flex-wrap: wrap;
@@ -104,67 +102,23 @@ canvas {
   padding: 20px;
 }
 
-/* 右寄せ */
-.right-align {
-  text-align: right;
-  margin-right: 20px;
-  margin-top: 10px;
-}
+.right-align { text-align: right; margin: 10px 20px; }
+.right-align button { background-color: #2196F3; }
 
-.right-align button {
-  background-color: #2196F3;
-  padding: 10px 20px;
-}
-
-.right-align button:hover {
-  background-color: #0b7dda;
-}
-
-/* テーブルとチャートの親要素 */
-.table-container, .chart-container {
-  flex: 1;
-  min-width: 300px;
-}
-
-/* 入力フォームのスタイル */
+/* 入力要素 */
 input[type="date"], input[type="file"], input[type="number"] {
   padding: 8px 10px;
-  font-size: 14px;
   border: 1px solid #ccc;
   border-radius: 4px;
-  box-sizing: border-box;
 }
 
-input[type="date"], input[type="number"] {
-  width: 150px;
-}
+input[type="file"] { width: 100%; max-width: 500px; }
 
-input[type="file"] {
-  width: 500px;
-  padding: 5px;
-}
-
-/* グラフ更新ボタンのスタイル */
-.GraphupdateButton {
-  background-color: #4CAF50;
-  color: white;
-  padding: 8px 12px;
-  font-size: 14px;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  margin-left: 10px;
-}
-
-.GraphupdateButton:hover {
-  background-color: #45a049;
-}
-
-/* チャートキャンバスの親 */
-#chartcanvas {
-  width: 100%;
+/* グラフエリア */
+#chartcanvas, #annualCharts {
   padding: 20px;
-  margin-top: 30px;
+  /* 出現時のガタつきを滑らかにする（オプション） */
+  transition: opacity 0.3s ease-in-out;
 }
 
 #chartcanvas > div {
@@ -175,60 +129,16 @@ input[type="file"] {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
-#chartcanvas h3 {
-  text-align: center;
-  margin-top: 0;
-  color: #4CAF50;
-}
-
-#chartcanvas label {
-  display: inline-block;
-  margin-bottom: 15px;
-  font-weight: normal;
-}
-
-#chartcanvas input[type="number"] {
-  width: 100px;
-}
-
-/* 年別グラフの親 */
-#annualCharts {
-  width: 100%;
-  padding: 20px;
-}
-
-#annualCharts h3 {
-  text-align: center;
-  color: #4CAF50;
-  margin-top: 30px;
-  margin-bottom: 20px;
-}
-
-#annualCharts canvas {
-  margin-bottom: 40px;
-}
+#chartcanvas h3 { text-align: center; color: #4CAF50; }
 
 /* レスポンシブ対応 */
 @media (max-width: 768px) {
-  .container {
-    flex-direction: column;
-  }
-
-  input[type="file"] {
-    width: 100%;
-  }
-
-  form {
-    padding: 20px;
-    margin: 10px;
-  }
-
-  label {
-    flex-direction: column;
-    align-items: flex-start;
-  }
+  .container { flex-direction: column; }
+  form { padding: 20px; margin: 10px; }
+  label { flex-direction: column; align-items: flex-start; }
+  .chart-container { min-height: 250px; }
 }
-  </style>
+</style>
 </head>
 <body>
   <h1 id="mainTitle">気象経過 地名</h1>
