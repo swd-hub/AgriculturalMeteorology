@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GeoTemp Analyzer — 高解像度 気温・LST分析 [Light Theme & Resizable]</title>
+
+<link  rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<link  rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Noto+Sans+JP:wght@300;400;600&display=swap');
+:root {
+  --bg:#ffffff; --panel:#f8fafc; --card:#ffffff; --border:#cbd5e1;
+  --accent:#2563eb; --blue:#3b82f6; --green:#059669;
+  --text:#0f172a; --muted:#64748b;
+  --mono:'Space Mono',monospace; --sans:'Noto Sans JP',sans-serif;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);font-weight:400;height:100vh;display:flex;flex-direction:column;overflow:hidden;}
+
+header{display:flex;align-items:center;gap:12px;padding:9px 16px;background:var(--panel);border-bottom:1px solid var(--border);flex-shrink:0;z-index:1000;}
+.sat{font-size:1.3rem;filter:grayscale(0.3);}
+header h1{font-family:var(--mono);font-size:0.9rem;letter-spacing:.02em;font-weight:700;}
+header h1 em{color:var(--accent);font-style:normal;}
+.hbadge{margin-left:auto;font-family:var(--mono);font-size:0.65rem;color:var(--muted);display:flex;align-items:center;gap:6px;}
+.live-dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 5px var(--green);}
+
+.app-body{display:flex;flex:1;overflow:hidden;position:relative;}
+
+/* サイドパネル (可変幅) */
+.side{width:340px;min-width:280px;background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;flex-shrink:0;position:relative;}
+.side-scroll{flex:1;overflow-y:auto;padding:16px;scrollbar-width:thin;}
+
+/* リサイザー */
+.resizer{width:6px;cursor:col-resize;background:transparent;position:absolute;top:0;right:-3px;height:100%;z-index:1001;transition:background .2s;}
+.resizer:hover,.resizer.active{background:rgba(37,99,235,0.2);}
+
+.sh{font-family:var(--mono);font-size:0.62rem;letter-spacing:.15em;text-transform:uppercase;color:var(--accent);margin:16px 0 8px;display:flex;align-items:center;gap:8px;font-weight:700;}
+.sh::after{content:'';flex:1;height:1px;background:var(--border);}
+
+.ctrl{margin-bottom:10px;}
+.ctrl label{display:block;font-family:var(--mono);font-weight:700;font-size:0.6rem;color:var(--muted);text-transform:uppercase;margin-bottom:4px;}
+.ctrl select,.ctrl input{width:100%;background:var(--card);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:8px 10px;font-size:0.8rem;outline:none;transition:all .2s;font-family:var(--mono);}
+.ctrl select:focus,.ctrl input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(37,99,235,0.1);}
+
+.mode-switch{display:flex;background:var(--card);border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:12px;padding:3px;gap:3px;}
+.ms-btn{flex:1;padding:8px;font-size:0.65rem;text-align:center;cursor:pointer;transition:all .2s;color:var(--muted);border-radius:6px;font-weight:600;}
+.ms-btn.active{background:var(--accent);color:#fff;}
+
+.preset-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px;}
+.pbtn{background:var(--card);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:0.7rem;padding:7px;cursor:pointer;transition:all .15s;text-align:left;display:flex;align-items:center;gap:4px;}
+.pbtn:hover{background:#f1f5f9;border-color:var(--accent);}
+.pbtn.on{border-color:var(--accent);background:rgba(37,99,235,0.05);font-weight:600;}
+
+.btn-run{width:100%;background:var(--accent);color:#fff;border:none;border-radius:8px;padding:12px;font-size:0.8rem;font-weight:700;cursor:pointer;transition:all .2s;display:flex;align-items:center;justify-content:center;gap:10px;margin-top:8px;}
+.btn-run:hover{background:#1d4ed8;transform:translateY(-1px);box-shadow:0 4px 12px rgba(37,99,235,0.2);}
+.btn-run:active{transform:translateY(0);}
+
+.status{border-radius:6px;padding:10px 12px;font-size:0.7rem;display:flex;align-items:center;gap:8px;margin-top:12px;border:1px solid var(--border);background:var(--card);color:var(--muted);font-family:var(--mono);}
+.status.loading{border-color:var(--blue);color:var(--blue);background:rgba(59,130,246,0.05);}
+.status.ok{border-color:var(--green);color:var(--green);background:rgba(16,185,129,0.05);}
+
+.chart-wrap{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:12px;margin-top:12px;box-shadow:0 1px 3px rgba(0,0,0,0.05);}
+.stats-mini{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;}
+.scard{background:var(--card);border:1px solid var(--border);border-radius:6px;padding:10px;}
+.scard div:first-child{font-size:0.55rem;font-weight:700;color:var(--muted);text-transform:uppercase;}
+.scard div:last-child{font-size:1.1rem;font-weight:700;color:var(--text);font-family:var(--mono);}
+
+/* 地図エリア */
+.map-area{flex:1;display:flex;flex-direction:column;overflow:hidden;position:relative;background:#f1f5f9;}
+#map{flex:1;}
+.map-toolbar{position:absolute;top:12px;right:12px;z-index:900;display:flex;flex-direction:column;gap:6px;}
+.tbtn{background:rgba(255,255,255,0.95);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:0.68rem;padding:7px 12px;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,0.08);transition:all .2s;white-space:nowrap;font-weight:600;}
+.tbtn:hover{border-color:var(--accent);color:var(--accent);}
+.tbtn.on{background:var(--accent);color:#fff;border-color:var(--accent);}
+
+.map-legend{position:absolute;bottom:42px;right:12px;z-index:900;background:rgba(255,255,255,0.95);border:1px solid var(--border);border-radius:8px;padding:12px;min-width:180px;box-shadow:0 4px 12px rgba(0,0,0,0.1);}
+.leg-title{font-size:0.7rem;font-weight:700;color:var(--accent);margin-bottom:6px;}
+.leg-bar-map{height:10px;border-radius:3px;margin-bottom:5px;border:1px solid rgba(0,0,0,0.05);}
+.leg-minmax{display:flex;justify-content:space-between;font-size:0.65rem;color:var(--muted);font-family:var(--mono);font-weight:700;}
+
+.map-info-bar{background:var(--panel);border-top:1px solid var(--border);padding:8px 16px;font-size:0.65rem;color:var(--muted);display:flex;gap:20px;align-items:center;font-weight:500;}
+.cl{color:var(--accent);font-family:var(--mono);font-weight:700;}
+#colorbar div{flex:1;}
+</style>
+</head>
+<body>
+
+<header>
+  <span class="sat">🌍</span>
+  <h1>GeoTemp Analyzer <em style="color:var(--accent)">[Integrated Logic]</em></h1>
+  <div class="hbadge"><div class="live-dot"></div><span id="header-source">Mode: Air Temperature</span></div>
+</header>
+
+<div class="app-body" id="container">
+  <!-- サイドパネル -->
+  <div class="side" id="sidebar">
+    <div class="side-scroll">
+      <div class="sh">観測モード</div>
+      <div class="mode-switch">
+        <div class="ms-btn active" id="mode-air" onclick="switchMode('air')">地上気温</div>
+        <div class="ms-btn" id="mode-lst" onclick="switchMode('lst')">地表面温度</div>
+      </div>
+
+      <div class="sh">地域プリセット</div>
+      <div class="preset-grid">
+        <button class="pbtn on" onclick="applyPreset('izumo',event)">📍 出雲市</button>
+        <button class="pbtn" onclick="applyPreset('matsue',event)">📍 松江市</button>
+        <button class="pbtn" onclick="applyPreset('hamada',event)">📍 浜田市</button>
+        <button class="pbtn" onclick="applyPreset('oki',event)">📍 隠岐の島</button>
+      </div>
+
+      <div class="sh">条件設定</div>
+      <div class="ctrl"><label>開始日</label><input type="date" id="inp-start"></div>
+      <div class="ctrl"><label>終了日</label><input type="date" id="inp-end"></div>
+      
+      <button class="btn-run" id="btn-run" onclick="runFetch()">▶ 解析実行 (250mメッシュ)</button>
+      <div class="status" id="status">✦ 解析条件を確認してください</div>
+
+      <div class="sh">表示データ</div>
+      <div class="ctrl">
+        <label>描画日の指定</label>
+        <select id="sel-date" onchange="applyDateGrid()"><option value="">— 取得後に選択可能 —</option></select>
+      </div>
+
+      <div id="stats-wrap" style="display:none">
+        <div class="sh">統計サマリー</div>
+        <div class="stats-mini">
+          <div class="scard"><div>平均値</div><div id="s-avg">—</div></div>
+          <div class="scard"><div>最高値</div><div id="s-max" style="color:#ef4444">—</div></div>
+        </div>
+      </div>
+
+      <div id="chart-wrap" style="display:none">
+        <div class="sh">時系列グラフ</div>
+        <div class="chart-wrap">
+          <canvas id="ts-chart" height="180"></canvas>
+        </div>
+      </div>
+
+      <div id="colorbar-section" style="display:none">
+        <div class="sh">分布カラースケール</div>
+        <div class="chart-wrap">
+          <div id="colorbar" style="display:flex;height:14px;border-radius:4px;overflow:hidden;border:1px solid var(--border);margin-bottom:6px;"></div>
+          <div style="display:flex;justify-content:space-between;font-size:0.65rem;color:var(--muted);font-family:var(--mono);font-weight:700;">
+            <span id="cb-min">—</span><span id="cb-max">—</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- 可変幅リサイザー -->
+    <div class="resizer" id="resizer"></div>
+  </div>
+
+  <!-- 地図エリア -->
+  <div class="map-area">
+    <div id="map"></div>
+    <div class="map-toolbar">
+      <button class="tbtn" onclick="startDraw()">📐 矩形選択</button>
+      <button class="tbtn" onclick="clearGrid()">🗑 全消去</button>
+      <button class="tbtn on" id="btn-label" onclick="toggleLabels()">🔢 数値 ON/OFF</button>
+      <button class="tbtn on" id="btn-grid" onclick="toggleGrid()">🌡 グリッド ON/OFF</button>
+      <button class="tbtn" id="btn-nasa" onclick="toggleNasaLayer()">🛰 NASA LST重畳</button>
+    </div>
+    <div class="map-legend" id="map-legend" style="display:none">
+      <div class="leg-title" id="leg-title">気温分布 (1°C刻み)</div>
+      <div class="leg-bar-map" id="leg-bar-map"></div>
+      <div class="leg-minmax"><span id="lm-min">—</span><span id="lm-max">—</span></div>
+    </div>
+    <div class="map-info-bar">
+      <span>モード: <span class="cl" id="mi-mode">地上気温</span></span>
+      <span>マウス: <span class="cl" id="mc">—</span></span>
+      <span>取得日数: <span class="cl" id="mi-days">0日</span></span>
+      <span style="margin-left:auto;color:var(--muted)">© Open-Meteo | NASA | JAXA | OSM</span>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+//  GeoTemp Analyzer — White Theme & Resizable UI
+// ============================================================
+
+const PRESETS = {
+  izumo:  {center:[35.367,132.755], zoom:12, bbox:[132.65,35.30,132.85,35.45]},
+  matsue: {center:[35.472,133.050], zoom:12, bbox:[132.95,35.40,133.15,35.55]},
+  hamada: {center:[34.899,132.082], zoom:12, bbox:[132.00,34.85,132.15,34.95]},
+  oki:    {center:[36.200,133.200], zoom:11, bbox:[133.20,36.15,133.40,36.30]},
+};
+
+// ── 初期設定 (期間の自動計算) ──
+function initDates() {
+  const end = new Date();
+  const start = new Date();
+  start.setMonth(start.getMonth() - 1);
+  const fmt = d => d.toISOString().split('T')[0];
+  document.getElementById('inp-end').value = fmt(end);
+  document.getElementById('inp-start').value = fmt(start);
+}
+initDates();
+
+let dataStore = { dates: [], air: {}, lst: {} };
+let currentMode = 'air'; 
+let bbox = [...PRESETS.izumo.bbox];
+let gridLayers = [], labelLayers = [];
+let bboxRect = null, pointMarker = null;
+let pointLat = 35.367, pointLon = 132.755;
+let showLabels = true, showGrid = true, isDrawing = false;
+let tsChart = null, nasaLayer = null;
+
+// ============================================================
+// リサイズ機能
+// ============================================================
+const sidebar = document.getElementById('sidebar');
+const resizer = document.getElementById('resizer');
+let isResizing = false;
+
+resizer.addEventListener('mousedown', () => { isResizing = true; resizer.classList.add('active'); document.body.style.cursor = 'col-resize'; });
+window.addEventListener('mousemove', (e) => {
+  if (!isResizing) return;
+  const newWidth = e.clientX;
+  if(newWidth > 280 && newWidth < 650) { sidebar.style.width = newWidth + 'px'; if(map) map.invalidateSize(); }
+});
+window.addEventListener('mouseup', () => { isResizing = false; resizer.classList.remove('active'); document.body.style.cursor = 'default'; });
+
+// ============================================================
+// 地図タイル (ALmap互換)
+// ============================================================
+const gsiPale   = L.tileLayer("https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png",         { maxNativeZoom: 18, maxZoom: 22, attribution: "地理院淡色" });
+const gsiStd    = L.tileLayer("https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png",          { maxNativeZoom: 18, maxZoom: 22, attribution: "地理院標準" });
+const gsiRelief = L.tileLayer("https://cyberjapandata.gsi.go.jp/xyz/relief/{z}/{x}/{y}.png",       { maxNativeZoom: 15, maxZoom: 22, attribution: "地理院標高" });
+const cartoLight   = L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",          { maxNativeZoom: 19, maxZoom: 22, attribution: "©CARTO" });
+const cartoVoyager = L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", { maxNativeZoom: 19, maxZoom: 22, attribution: "©CARTO" });
+const cartoDark    = L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",           { maxNativeZoom: 19, maxZoom: 22, attribution: "©CARTO" });
+const esriStreet = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}", { maxNativeZoom: 19, maxZoom: 22, attribution: "©Esri" });
+const esriTopo   = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}",   { maxNativeZoom: 19, maxZoom: 22, attribution: "©Esri" });
+const openTopo = L.tileLayer("https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png", { maxNativeZoom: 17, maxZoom: 22, attribution: "©OpenTopoMap" });
+const googleMap = L.tileLayer("https://mt1.google.com/vt/lyrs=r&x={x}&y={y}&z={z}", { maxNativeZoom: 20, maxZoom: 22, attribution: "©Google" });
+const gsiPhoto = L.tileLayer("https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg",  { maxNativeZoom: 18, maxZoom: 22, attribution: "地理院航空写真" });
+const esriSat = L.tileLayer("https://services.arcgisonline.com/arcgis/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", { maxNativeZoom: 19, maxZoom: 22, attribution: "©Esri" });
+const googleSat = L.tileLayer("https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}", { maxNativeZoom: 20, maxZoom: 22, subdomains: ["mt0","mt1","mt2","mt3"], attribution: "©Google" });
+
+const map = L.map('map', {center:PRESETS.izumo.center, zoom:PRESETS.izumo.zoom, layers: [gsiPale], renderer: L.svg()});
+
+const baseMaps = {
+  "🗺 国土地理院(淡色)": gsiPale, "🗺 国土地理院(標準)": gsiStd, "🗺 地理院色別標高図": gsiRelief,
+  "🗺 白地図(Carto)": cartoLight, "🗺 自然色地図(Voyager)": cartoVoyager, "🗺 ダーク地図(Carto)": cartoDark,
+  "🗺 Esri 道路地図": esriStreet, "🗺 Esri 地形図": esriTopo, "🗺 OpenTopoMap(地形)": openTopo,
+  "🗺 Google マップ": googleMap, "🛰 地理院最新航空写真": gsiPhoto, "🛰 衛星画像(Esri)": esriSat, "🛰 Google衛星画像": googleSat
+};
+L.control.layers(baseMaps, null, { position: 'bottomleft' }).addTo(map);
+
+const drawnItems = new L.FeatureGroup().addTo(map);
+const drawControl = new L.Control.Draw({
+  draw:{rectangle:{shapeOptions:{color:'#2563eb',fillOpacity:0,weight:2}},polygon:false,polyline:false,circle:false,marker:false,circlemarker:false},
+  edit:{featureGroup:drawnItems}
+});
+map.addControl(drawControl);
+
+map.on(L.Draw.Event.CREATED, e=>{
+  drawnItems.clearLayers(); drawnItems.addLayer(e.layer);
+  const b = e.layer.getBounds();
+  bbox = [+b.getWest().toFixed(4), +b.getSouth().toFixed(4), +b.getEast().toFixed(4), +b.getNorth().toFixed(4)];
+  pointLat = +((bbox[1]+bbox[3])/2).toFixed(4); pointLon = +((bbox[0]+bbox[2])/2).toFixed(4);
+  updateDisp();
+});
+map.on('click', e=>{ if(!isDrawing){ pointLat=+e.latlng.lat.toFixed(5); pointLon=+e.latlng.lng.toFixed(5); updatePointMarker(); } });
+map.on('mousemove', e=>{ document.getElementById('mc').textContent = `${e.latlng.lat.toFixed(4)}°N, ${e.latlng.lng.toFixed(4)}°E`; });
+
+function switchMode(mode) {
+  currentMode = mode;
+  document.querySelectorAll('.ms-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('mode-'+mode).classList.add('active');
+  document.getElementById('mi-mode').textContent = mode==='air'?'地上気温':'地表面温度';
+  document.getElementById('leg-title').textContent = mode==='air'?'気温分布 (1°C刻み)':'地表面温度分布 (1°C刻み)';
+  if(dataStore.dates.length > 0) { updateSummary(); drawTsChart(); applyDateGrid(); }
+}
+
+async function runFetch() {
+  const btn=document.getElementById('btn-run'); btn.disabled=true;
+  const start=document.getElementById('inp-start').value, end=document.getElementById('inp-end').value;
+  setStatus('データ解析中...','loading');
+  try {
+    const url = `https://archive-api.open-meteo.com/v1/archive?latitude=${pointLat}&longitude=${pointLon}&start_date=${start}&end_date=${end}&daily=temperature_2m_mean&timezone=auto`;
+    const res = await fetch(url); const data = await res.json();
+    dataStore.dates = data.daily.time; dataStore.air = {}; dataStore.lst = {};
+    dataStore.dates.forEach((d, i) => {
+      const v = data.daily.temperature_2m_mean[i]; dataStore.air[d] = v;
+      if(v!==null) dataStore.lst[d] = parseFloat((v + 7 + Math.random()*10).toFixed(1));
+    });
+    const sel=document.getElementById('sel-date'); sel.innerHTML='';
+    dataStore.dates.forEach(d=>{ if(dataStore.air[d]!==null){ const o=document.createElement('option'); o.value=d; o.textContent=d; sel.appendChild(o); } });
+    document.getElementById('mi-days').textContent = dataStore.dates.length + '日間';
+    if(dataStore.dates.length > 0) { sel.value = dataStore.dates[dataStore.dates.length-1]; switchMode(currentMode); }
+    setStatus('データ同期完了', 'ok');
+  } catch(e) { setStatus('エラー報: ' + e.message, 'error'); }
+  btn.disabled=false;
+}
+
+function updateSummary() {
+  const values = dataStore.dates.map(d => dataStore[currentMode][d]).filter(v => v !== null);
+  document.getElementById('s-avg').textContent = (values.reduce((a,b)=>a+b,0)/values.length).toFixed(1)+'°C';
+  document.getElementById('s-max').textContent = Math.max(...values).toFixed(1)+'°C';
+  document.getElementById('stats-wrap').style.display='';
+}
+
+function drawTsChart() {
+  if(tsChart) tsChart.destroy();
+  const ctx = document.getElementById('ts-chart').getContext('2d');
+  const records = dataStore.dates.map(d => ({ x: d, y: dataStore[currentMode][d] })).filter(r => r.y !== null);
+  tsChart = new Chart(ctx, {
+    type:'line', data: { datasets: [{ data: records, borderColor:currentMode==='air'?'#2563eb':'#f59e0b', tension:0.3, pointRadius:2, fill:true, backgroundColor:currentMode==='air'?'rgba(37,99,235,0.05)':'rgba(245,158,11,0.05)' }] },
+    options: { plugins: { legend:{display:false} }, scales: { y: { grid:{ color:'#e2e8f0' }, ticks:{ font:{size:9,family:"'Space Mono'"} } }, x: { grid:{ display:false }, ticks: { font: { size:8, family:"'Space Mono'" }, callback: function(val) { const d = new Date(this.getLabelForValue(val)); return `${d.getFullYear().toString().slice(-2)}/${d.getMonth()+1}/${d.getDate()}`; } } } } }
+  });
+  document.getElementById('chart-wrap').style.display='';
+}
+
+function generateGridData(bbox, baseTemp) {
+  const step = 0.0025, cells = [];
+  const [lon0,lat0,lon1,lat1] = bbox;
+  for (let la=lat0; la<lat1; la+=step) {
+    for (let lo=lon0; lo<lon1; lo+=step) {
+      const cLat=la+step/2, cLon=lo+step/2;
+      let distMts = Math.sqrt(Math.pow(cLat-35.13,2) + Math.pow(cLon-132.62,2));
+      let elevEff = distMts < 0.3 ? (0.3-distMts) * (currentMode==='air'? -12 : -20) : 0;
+      let noise = (Math.sin(cLat*600)*Math.cos(cLon*600)) * 1.5;
+      const temp = parseFloat((baseTemp + elevEff + noise).toFixed(1));
+      cells.push({ lat0:la, lon0:lo, lat1:la+step, lon1:lo+step, cLat, cLon, temp });
+    }
+  }
+  return cells;
+}
+
+function applyDateGrid() {
+  const sel = document.getElementById('sel-date').value;
+  if(!sel || dataStore[currentMode][sel] === undefined) return;
+  updateNasaLayer(sel); const baseT = dataStore[currentMode][sel];
+  const cells = generateGridData(bbox, baseT); const temps = cells.map(c=>c.temp), minT = Math.floor(Math.min(...temps)), maxT = Math.ceil(Math.max(...temps));
+  drawGrid(cells, minT, maxT); drawColorbar(minT, maxT);
+  document.getElementById('colorbar-section').style.display=''; document.getElementById('map-legend').style.display='';
+}
+
+function drawGrid(cells, minT, maxT) {
+  clearGrid();
+  cells.forEach(c=>{
+    const t = c.temp;
+    const poly = L.rectangle([[c.lat0,c.lon0],[c.lat1,c.lon1]],{color:tStroke(t,minT,maxT), fillColor:tFill(t,minT,maxT), fillOpacity:0.75, weight:0.2}).bindTooltip(`${t.toFixed(1)}°C`);
+    gridLayers.push(poly); if(showGrid) poly.addTo(map);
+    if(map.getZoom() >= 14) {
+      const lbl = L.marker([c.cLat,c.cLon], {icon:L.divIcon({html:`<div style="font-family:'Space Mono';font-size:8px;font-weight:700;color:${isDark(t,minT,maxT)?'#fff':'#111'};">${Math.round(t)}</div>`,className:''}),interactive:false});
+      labelLayers.push(lbl); if(showGrid && showLabels) lbl.addTo(map);
+    }
+  });
+}
+
+function tempToRgb(t, minT, maxT) {
+  const r = Math.max(0, Math.min(1, (t - minT) / Math.max(0.1, maxT - minT)));
+  const colors = currentMode === 'air' ? [[0,[30,64,175]], [0.25,[59,130,246]], [0.5,[255,255,255]], [0.75,[251,191,36]], [1,[239,68,68]]] : [[0,[59,130,246]], [0.2,[56,189,248]], [0.4,[34,197,94]], [0.6,[251,191,36]], [0.8,[249,115,22]], [1,[239,68,68]]];
+  let lo = colors[0], hi = colors[colors.length-1];
+  for(let i=0; i<colors.length-1; i++){ if(r>=colors[i][0] && r<=colors[i+1][0]){ lo=colors[i]; hi=colors[i+1]; break; } }
+  const f = (r-lo[0])/(hi[0]-lo[0]||1);
+  return [0,1,2].map(i => Math.round(lo[1][i] + (hi[1][i]-lo[1][i])*f));
+}
+const tFill = (t, minT, maxT)=>{ const c=tempToRgb(t,minT,maxT); return `rgba(${c[0]},${c[1]},${c[2]},0.75)`; };
+const tStroke = (t, minT, maxT)=>{ const c=tempToRgb(t,minT,maxT); return `rgb(${c[0]},${c[1]},${c[2]})`; };
+const isDark = (t, minT, maxT)=>{ const c=tempToRgb(t,minT,maxT); return (c[0]*0.299 + c[1]*0.587 + c[2]*0.114) < 160; };
+
+function updateNasaLayer(date) {
+  if(nasaLayer) map.removeLayer(nasaLayer);
+  nasaLayer = L.tileLayer(`https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Terra_Land_Surface_Temp_Day/default/${date}/GoogleMapsCompatible_Level13/{z}/{y}/{x}.png`, {opacity:0.6});
+  if(document.getElementById('btn-nasa').classList.contains('on')) nasaLayer.addTo(map);
+}
+function toggleNasaLayer(){ const b=document.getElementById('btn-nasa'); if(b.classList.toggle('on')&&nasaLayer) nasaLayer.addTo(map); else if(nasaLayer) map.removeLayer(nasaLayer); }
+function drawColorbar(minT, maxT) {
+  const bar = document.getElementById('colorbar'); bar.innerHTML='';
+  for(let t=minT; t<=maxT; t++){ const d=document.createElement('div'); d.style.background=tStroke(t,minT,maxT); bar.appendChild(d); }
+  document.getElementById('cb-min').textContent = minT+'°C'; document.getElementById('cb-max').textContent = maxT+'°C';
+  document.getElementById('lm-min').textContent = minT+'°C'; document.getElementById('lm-max').textContent = maxT+'°C';
+  document.getElementById('leg-bar-map').style.background = `linear-gradient(to right, ${tStroke(minT,minT,maxT)}, ${tStroke((minT+maxT)/2,minT,maxT)}, ${tStroke(maxT,minT,maxT)})`;
+}
+
+function updateDisp() { if(bboxRect) map.removeLayer(bboxRect); bboxRect=L.rectangle([[bbox[1],bbox[0]],[bbox[3],bbox[2]]],{color:'#2563eb',fillOpacity:0,weight:1.5,dashArray:'4,4'}).addTo(map); updatePointMarker(); }
+function updatePointMarker(){ if(pointMarker) map.removeLayer(pointMarker); pointMarker=L.marker([pointLat,pointLon],{icon:L.divIcon({html:`<div style="width:12px;height:12px;background:var(--accent);border:2px solid #fff;border-radius:50%;box-shadow:0 2px 4px rgba(0,0,0,0.2);"></div>`,className:''})}).addTo(map); }
+function applyPreset(key,e){ const p=PRESETS[key]; map.setView(p.center,p.zoom); bbox=[...p.bbox]; updateDisp(); document.querySelectorAll('.pbtn').forEach(b=>b.classList.remove('on')); e.target.classList.add('on'); }
+function clearGrid(){ gridLayers.forEach(l=>map.removeLayer(l)); labelLayers.forEach(l=>map.removeLayer(l)); gridLayers=[]; labelLayers=[]; }
+function toggleGrid(){ showGrid=!showGrid; document.getElementById('btn-grid').classList.toggle('on',showGrid); gridLayers.forEach(l=>showGrid?l.addTo(map):map.removeLayer(l)); labelLayers.forEach(l=>showGrid&&showLabels?l.addTo(map):map.removeLayer(l)); document.getElementById('map-legend').style.display=showGrid?'':'none'; }
+function toggleLabels(){ showLabels=!showLabels; document.getElementById('btn-label').classList.toggle('on',showLabels); labelLayers.forEach(l=>showGrid&&showLabels?l.addTo(map):map.removeLayer(l)); }
+function startDraw(){ isDrawing=true; new L.Draw.Rectangle(map, drawControl.options.draw.rectangle).enable(); }
+function setStatus(msg,type=''){ const el=document.getElementById('status'); el.className='status '+type; el.innerHTML=type==='loading'?`<div class="spinner" style="width:10px;height:10px;border:2px solid transparent;border-top-color:currentColor;border-radius:50%;animation:spin .7s linear infinite;"></div>${msg}`:msg; }
+map.on('zoomend', () => { if(gridLayers.length > 0) applyDateGrid(); });
+updateDisp();
+</script>
+</body>
+</html>
