@@ -253,7 +253,7 @@ input:checked + .slider:before {
             </label>
             <label for="targetTempSum">目標　有効積算温度:</label>
             <input type="number" id="targetTempSum" step="1" placeholder="例：2500">
-            <label for="recentDays">予測に使う直近日数:</label>
+            <label for="recentDays">平年偏差の算出に使う直近日数:</label>
             <input type="number" value="14" id="recentDays" step="1" min="2">
             <button type="button" id="updateButton">データ更新／再計算</button>
         </form>
@@ -275,7 +275,7 @@ input:checked + .slider:before {
                 </tr>
                 <tr>
                     <td>目標到達予測</td>
-                    <td>「実測データ最終日」までの実測の有効積算温度に対し、直近N日間の平均日加算量で単純に将来を延長し、目標値に到達する日を推定する（単純外挿法）。気温の季節変化や天気予報は考慮していないため、目安として利用すること。</td>
+                    <td>「実測データ最終日」までの実測の有効積算温度をもとに、それ以降はCSVに含まれる日別の平年値（気候値）をそのまま用いて将来の気温を推定し、積算温度が目標値に到達する日を求める（平年値外挿法）。直近の実測と平年値の差（偏差）は参考値として表示するが、予測には反映しない（直近の短期的な偏差より、長期の気候値をそのまま使う方が精度が高いと判断）。季節による気温の上昇・下降は平年値そのものに織り込まれているため、秋以降にペースが落ち、翌春に到達するといった現実的な予測になる。ただし天気予報そのものは考慮していないため、あくまで目安として利用すること。使用した平年値は下の「予測に用いた平年値」グラフで確認できる。</td>
                 </tr>
             </table>
         </div>
@@ -289,6 +289,10 @@ input:checked + .slider:before {
     <h3 class="dailyTitle" style="display: none;">日データ（平均気温）</h3>
         <div class="chart-container">
             <canvas id="dailyTempChart" width="200" height="150"></canvas>
+        </div>
+        <h3 class="normalTitle" style="display: none;">予測に用いた平年値（気候値）</h3>
+        <div class="chart-container">
+            <canvas id="normalTempChart" width="200" height="150"></canvas>
         </div>
         <h3 class="cumulativeTitle" style="display: none;">有効積算温度と目標到達予測</h3>
         <div class="chart-container">
@@ -312,6 +316,7 @@ function updateDateFields() {
 window.onload = updateDateFields;
 
 let dailyTempChart;
+let normalTempChart;
 let cumulativeTempChart;
 let rawData = [];  // パース済みの生データ（date, temperature）
 
@@ -332,7 +337,7 @@ function shiftJISToUTF8(arrayBuffer) {
     return decoder.decode(uint8Array);
 }
 
-// パース：年・月・日・平均気温のみを取り出す
+// パース：年・月・日・平均気温（実測）・平年値(℃)を取り出す
 function parseCSV(content) {
     const lines = content.trim().split('\n').filter(line => line.trim() !== "");
 
@@ -348,21 +353,66 @@ function parseCSV(content) {
     const targetHeaders = ["年", "月", "日", "平均気温(℃)"];
     let indicesToSelect = targetHeaders.map(header => combinedHead.indexOf(header));
 
-    const dataLines = lines.slice(6).map(line => {
+    // 気象庁CSVの「平均気温(℃)」グループは [実測値, 品質情報, 均質番号, 平年値, 品質情報] の5列構成。
+    // 平年値は実測気温列の3つ後ろに固定配置されている。
+    const tempIndex = indicesToSelect[3];
+    const normalIndex = tempIndex >= 0 ? tempIndex + 3 : -1;
+
+    const dataRows = lines.slice(6);
+
+    return dataRows.map(line => {
         const cols = line.split(',');
-        const selectedCols = indicesToSelect.map(index => index >= 0 ? cols[index] || '0' : '0');
-        return selectedCols.join(',');
-    });
+        const year = cols[indicesToSelect[0]];
+        const month = cols[indicesToSelect[1]];
+        const day = cols[indicesToSelect[2]];
+        const temp = tempIndex >= 0 ? parseFloat(cols[tempIndex]) : NaN;
+        const normalTemp = normalIndex >= 0 ? parseFloat(cols[normalIndex]) : NaN;
 
-    dataLines.unshift(targetHeaders.join(','));
-
-    return dataLines.slice(1).map(line => {
-        const cols = line.split(",");
         return {
-            date: new Date(Date.UTC(cols[0], cols[1] - 1, cols[2])),
-            temperature: parseFloat(cols[3]) || 0
+            date: new Date(Date.UTC(year, month - 1, day)),
+            temperature: isNaN(temp) ? 0 : temp,
+            normalTemp: isNaN(normalTemp) ? null : normalTemp
         };
     });
+}
+
+// 月日（例:"7-22"）ごとの平年値ルックアップを作成（将来日の平年値参照用）
+function buildNormalLookup(data) {
+    const map = {};
+    data.forEach(d => {
+        if (d.normalTemp !== null && !isNaN(d.normalTemp)) {
+            const key = `${d.date.getUTCMonth() + 1}-${d.date.getUTCDate()}`;
+            if (!(key in map)) map[key] = d.normalTemp;
+        }
+    });
+    return map;
+}
+
+// 指定日の平年値を取得（うるう年2/29は2/28で代用）
+function getNormalForDate(normalMap, date) {
+    const m = date.getUTCMonth() + 1, d = date.getUTCDate();
+    const key = `${m}-${d}`;
+    if (key in normalMap) return normalMap[key];
+    if (m === 2 && d === 29) return normalMap['2-28'] ?? null;
+    return null;
+}
+
+// 生気温から有効気温（下限・上限処理後）を算出
+function effectiveFromRaw(rawTemp, tempMin, tempMax, tempSumToggle) {
+    let t = rawTemp;
+    if (tempSumToggle && t > tempMax) t = tempMax;
+    if (t >= tempMin && t <= tempMax) return t - tempMin;
+    return 0;
+}
+
+// 直近N日間の「実測気温－平年値」の平均偏差を算出
+function calculateRecentBias(data, endDate, recentDays) {
+    const relevant = data
+        .filter(d => d.date <= endDate && d.normalTemp !== null && !isNaN(d.normalTemp))
+        .slice(-recentDays);
+    if (!relevant.length) return 0;
+    const diffs = relevant.map(d => d.temperature - d.normalTemp);
+    return diffs.reduce((a, b) => a + b, 0) / diffs.length;
 }
 
 function handleFileSelect() {
@@ -377,6 +427,8 @@ function handleFileSelect() {
 
         const dailyTitles = document.getElementsByClassName("dailyTitle");
         for (let el of dailyTitles) el.style.display = "block";
+        const normalTitles = document.getElementsByClassName("normalTitle");
+        for (let el of normalTitles) el.style.display = "block";
         const cumulativeTitles = document.getElementsByClassName("cumulativeTitle");
         for (let el of cumulativeTitles) el.style.display = "block";
     };
@@ -418,19 +470,10 @@ function calculateCumulativeTemperature(data, startDate, endDate, tempMin, tempM
     return cumulative;
 }
 
-// 直近N日間の平均日加算量を算出
-function calculateAverageDailyIncrement(cumulative, recentDays) {
-    const len = cumulative.temperature.length;
-    if (len < 2) return 0;
-    const n = Math.min(recentDays, len - 1);
-    const endValue = cumulative.temperature[len - 1];
-    const startValue = cumulative.temperature[len - 1 - n];
-    return (endValue - startValue) / n;
-}
-
-// 目標値への到達予測
-function predictTargetDate(cumulative, target, avgIncrement) {
-    const result = { hasTarget: target !== null && !isNaN(target) };
+// 目標値への到達予測（平年値＋直近偏差による季節性を考慮した外挿）
+// rawData: 全期間の生データ（normalTemp付き）, normalMap: 月日→平年値ルックアップ
+function predictTargetDate(cumulative, target, rawData, normalMap, bias, tempMin, tempMax, tempSumToggle) {
+    const result = { hasTarget: target !== null && !isNaN(target), bias };
     if (!result.hasTarget) return result;
 
     const lastValue = cumulative.temperature[cumulative.temperature.length - 1];
@@ -447,32 +490,52 @@ function predictTargetDate(cumulative, target, avgIncrement) {
 
     result.reached = false;
     result.remaining = target - lastValue;
-    result.avgIncrement = avgIncrement;
 
-    if (avgIncrement <= 0) {
+    const MAX_DAYS = 365 * 3; // 3年先まで探索して見つからなければ予測不可とする
+    const projDates = [];
+    const projValues = [];
+    const projNormals = [];
+    let cur = lastValue;
+    let daysNeeded = null;
+
+    for (let i = 1; i <= MAX_DAYS; i++) {
+        const d = new Date(lastDate);
+        d.setUTCDate(d.getUTCDate() + i);
+        const normal = getNormalForDate(normalMap, d);
+        if (normal === null) {
+            // 平年値が見つからない日はその日の偏差適用をスキップ（積算は据え置き）
+            projDates.push(d.toISOString().split('T')[0]);
+            projValues.push(cur);
+            projNormals.push(null);
+            continue;
+        }
+        const estimatedRaw = normal; // 平年偏差の平均は上乗せせず、平年値そのものを用いる（参考値としてbiasは別途表示）
+        cur += effectiveFromRaw(estimatedRaw, tempMin, tempMax, tempSumToggle);
+        projDates.push(d.toISOString().split('T')[0]);
+        projValues.push(cur);
+        projNormals.push(normal);
+        if (cur >= target) {
+            daysNeeded = i;
+            break;
+        }
+    }
+
+    if (daysNeeded === null) {
         result.error = true;
+        result.projDates = projDates;
+        result.projValues = projValues;
+        result.projNormals = projNormals;
         return result;
     }
 
-    const daysNeeded = Math.ceil(result.remaining / avgIncrement);
     const predictedDate = new Date(lastDate);
     predictedDate.setUTCDate(predictedDate.getUTCDate() + daysNeeded);
 
-    const projDates = [];
-    const projValues = [];
-    let cur = lastValue;
-    for (let i = 1; i <= daysNeeded; i++) {
-        const d = new Date(lastDate);
-        d.setUTCDate(d.getUTCDate() + i);
-        cur += avgIncrement;
-        projDates.push(d.toISOString().split('T')[0]);
-        projValues.push(cur);
-    }
-
     result.daysNeeded = daysNeeded;
     result.predictedDate = predictedDate.toISOString().split('T')[0];
-    result.projDates = projDates;
-    result.projValues = projValues;
+    result.projDates = projDates.slice(0, daysNeeded);
+    result.projValues = projValues.slice(0, daysNeeded);
+    result.projNormals = projNormals.slice(0, daysNeeded);
     return result;
 }
 
@@ -500,12 +563,14 @@ function runCalculation() {
         return;
     }
 
-    const avgIncrement = calculateAverageDailyIncrement(cumulative, recentDays);
-    const prediction = predictTargetDate(cumulative, target, avgIncrement);
+    const normalMap = buildNormalLookup(rawData);
+    const bias = calculateRecentBias(rawData, endDate, recentDays);
+    const prediction = predictTargetDate(cumulative, target, rawData, normalMap, bias, tempMin, tempMax, tempSumToggle);
 
     updateDailyChart(filteredData, startDate, endDate, tempMin, tempMax);
+    updateNormalChart(filteredData, startDate, endDate, prediction);
     updateCumulativeChart(cumulative, startDate, endDate, target, prediction);
-    updateTable(cumulative, startDate, endDate, target, avgIncrement, recentDays, prediction);
+    updateTable(cumulative, startDate, endDate, target, bias, recentDays, prediction);
 }
 
 function updateDailyChart(data, startDate, endDate, tempMin, tempMax) {
@@ -540,6 +605,57 @@ function updateDailyChart(data, startDate, endDate, tempMin, tempMax) {
             },
             scales: {
                 x: { ticks: { font: { size: 25 } }, title: { display: true, text: '日付', font: { size: 25 } } },
+                y: { suggestedMax: 35, ticks: { font: { size: 25 } }, title: { display: true, text: '', font: { size: 25 } } }
+            }
+        }
+    });
+}
+
+function updateNormalChart(pastData, startDate, endDate, prediction) {
+    const pastDates = pastData.map(d => d.date.toISOString().split('T')[0]);
+    const pastNormals = pastData.map(d => (d.normalTemp === null || d.normalTemp === undefined) ? null : d.normalTemp);
+
+    const futureDates = (prediction.hasTarget && prediction.projDates) ? prediction.projDates : [];
+    const futureNormals = (prediction.hasTarget && prediction.projNormals) ? prediction.projNormals : [];
+
+    const labels = pastDates.concat(futureDates);
+    const normals = pastNormals.concat(futureNormals);
+
+    const annotations = [
+        { type: 'line', scaleID: 'x', value: startDate.toISOString().split('T')[0], borderColor: 'red', borderWidth: 2 },
+        { type: 'line', scaleID: 'x', value: endDate.toISOString().split('T')[0], borderColor: 'blue', borderWidth: 2 }
+    ];
+    if (prediction.hasTarget && !prediction.reached && !prediction.error && prediction.predictedDate) {
+        annotations.push({
+            type: 'line', scaleID: 'x', value: prediction.predictedDate,
+            borderColor: 'green', borderWidth: 2, borderDash: [6, 6],
+            label: { display: true, content: `到達予測:${prediction.predictedDate}`, position: 'start', backgroundColor: 'green' }
+        });
+    }
+
+    if (normalTempChart) normalTempChart.destroy();
+    const ctxNormal = document.getElementById('normalTempChart').getContext('2d');
+    normalTempChart = new Chart(ctxNormal, {
+        type: 'line',
+        data: {
+            labels,
+            datasets: [{
+                label: '平年値（気候値）平均気温(℃)　※実測終了日以降は予測の根拠として使用',
+                data: normals,
+                borderColor: 'rgba(255, 159, 64, 1)',
+                fill: false,
+                spanGaps: true,
+                pointRadius: 0
+            }]
+        },
+        options: {
+            layout: { padding: { left: 20, right: 20, top: 20, bottom: 20 } },
+            plugins: {
+                annotation: { annotations },
+                legend: { labels: { font: { size: 24 } } }
+            },
+            scales: {
+                x: { ticks: { font: { size: 20 } }, title: { display: true, text: '日付', font: { size: 25 } } },
                 y: { suggestedMax: 35, ticks: { font: { size: 25 } }, title: { display: true, text: '', font: { size: 25 } } }
             }
         }
@@ -599,7 +715,7 @@ function updateCumulativeChart(cumulative, startDate, endDate, target, predictio
 
     if (prediction.hasTarget && !prediction.reached && !prediction.error) {
         datasets.push({
-            label: '有効積算温度(℃)【予測（直近平均で外挿）】',
+            label: '有効積算温度(℃)【予測（平年値）】',
             data: projectedData,
             borderColor: 'rgba(75, 192, 192, 0.6)',
             borderDash: [6, 4],
@@ -627,7 +743,7 @@ function updateCumulativeChart(cumulative, startDate, endDate, target, predictio
     });
 }
 
-function updateTable(cumulative, startDate, endDate, target, avgIncrement, recentDays, prediction) {
+function updateTable(cumulative, startDate, endDate, target, bias, recentDays, prediction) {
     const cultivationDays = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24) + 1);
     const lastValue = cumulative.temperature[cumulative.temperature.length - 1];
 
@@ -635,7 +751,7 @@ function updateTable(cumulative, startDate, endDate, target, avgIncrement, recen
         { label: "栽培期間の日数 (Cultivation Period in Days)", value: cultivationDays },
         { label: "有効データ数 (Valid Data Count)", value: cumulative.validDataCount },
         { label: "現在の有効積算温度（実測最終日時点）", value: Math.floor(lastValue) },
-        { label: `直近${recentDays}日間の平均日加算量`, value: avgIncrement.toFixed(2) }
+        { label: `直近${recentDays}日間の平年偏差（実測－平年値の平均・参考値／予測には反映せず平年値をそのまま使用）`, value: `${bias >= 0 ? '+' : ''}${bias.toFixed(2)}℃` }
     ];
 
     if (prediction.hasTarget) {
@@ -643,7 +759,7 @@ function updateTable(cumulative, startDate, endDate, target, avgIncrement, recen
         if (prediction.reached) {
             rows.push({ label: "判定", value: `実測データ最終日までに到達済み（到達日: ${prediction.reachedDate}）`, highlight: true });
         } else if (prediction.error) {
-            rows.push({ label: "判定", value: "直近の平均加算量が0以下のため予測不可（気温上昇傾向がありません）", highlight: true });
+            rows.push({ label: "判定", value: "3年以内に到達見込みなし（設定条件を確認してください）", highlight: true });
         } else {
             rows.push({ label: "残り必要な有効積算温度", value: Math.ceil(prediction.remaining) });
             rows.push({ label: "到達まで残り日数（予測）", value: `約${prediction.daysNeeded}日` });
