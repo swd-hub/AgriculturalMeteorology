@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta name="description" content="気象データを用いて日別値の有効積算温度を計算し、目標とする有効積算温度への到達予定日を予測してグラフ化する。">
+<meta name="author" content="澤田泰人">
+<meta name="date" content="2026年7月22日">
+<meta charset="UTF-8">
+<meta name="robots" content="noindex">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>有効積算温度 目標到達予測</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@latest"></script>
+    <style>
+@media print {
+* {
+  margin: 0;
+  padding: 0;
+}
+
+  .table-container, button, h5 {
+    display: none;
+  }
+.chart-container, .content {
+  page-break-inside: avoid;
+  page-break-before: auto;
+  page-break-after: auto;
+}
+}
+@media screen and (max-width: 768px) {
+  .chart-container {
+    width: 100% !important;
+    height: auto !important;
+    flex-direction: column;
+    padding: 10px !important;
+    margin: auto;
+  }
+
+.chart-container {
+    width: 800px;
+    height: 600px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin: auto;
+    padding: 20px;
+}
+
+.chart-container canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+  form {
+    width: 100% !important;
+    float: none !important;
+  }
+}
+
+button {
+  background-color: #4CAF50;
+  color: white;
+  padding: 10px 20px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+form {
+  flex: 1;
+  margin: 20px;
+  padding: 40px;
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  width: 200px;
+}
+
+h1 {
+  background-color: #4CAF50;
+  color: white;
+  padding: 10px;
+  text-align: center;
+}
+
+h2 {
+  padding: 10px;
+  text-align: center;
+}
+
+label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: bold;
+}
+.chart-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 50%;
+  height: 50%;
+  margin: auto;
+  page-break-before: always;
+  max-width: 100%;
+  padding: 20px;
+}
+
+.container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+}
+
+.right-align {
+  text-align: right;
+}
+
+.chart-container canvas {
+  margin-bottom: 30px;
+  padding: 30px;
+}
+.table-container, .chart-container {
+  flex: 1;
+  min-width: 300px;
+}
+
+.table-container {
+    flex: 1;
+}
+table {
+    border-collapse: collapse;
+    width: 100%;
+    margin-top: 20px;
+    background-color: #f9f9f9;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+th {
+    background-color: #4CAF50;
+    color: white;
+    padding: 12px;
+    font-size: 16px;
+    text-align: left;
+}
+
+td {
+    padding: 10px;
+    border-bottom: 1px solid #ddd;
+}
+
+input[type="date"], input[type="file"], input[type="number"] {
+  width: 100%;
+  padding: 12px;
+  font-size: 16px;
+  margin-bottom: 12px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+#cumulativeDataTable {
+  font-size: 20px;
+  padding: 2px;
+}
+
+#cumulativeDataTable td {
+  padding: 2px;
+}
+#cumulativeDataTable tr.highlight td {
+  background-color: #fff3cd;
+  font-weight: bold;
+}
+#results {
+  margin: 20px;
+  padding: 5px;
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+.switch {
+    position: relative;
+    display: flex;
+    align-items: center;
+    width: auto;
+    height: auto;
+    margin-bottom: 10px;
+}
+
+.switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.slider {
+    position: relative;
+    width: 40px;
+    height: 20px;
+    cursor: pointer;
+    background-color: #ccc;
+    transition: .4s;
+    border-radius: 20px;
+}
+
+.slider:before {
+    position: absolute;
+    content: "";
+    height: 16px;
+    width: 16px;
+    left: 2px;
+    bottom: 2px;
+    background-color: white;
+    transition: .4s;
+    border-radius: 50%;
+}
+
+input:checked + .slider {
+    background-color: #2196F3;
+}
+
+input:checked + .slider:before {
+    transform: translateX(20px);
+}
+
+.switch span {
+    margin-left: 10px;
+    white-space: nowrap;
+}
+    </style>
+    </head>
+<body>
+    <h1>有効積算温度 目標到達予測</h1>
+    <div class="right-align">
+        <button onclick="window.open('https://www.data.jma.go.jp/gmd/risk/obsdl/index.php', '_blank')">気象庁のサイトを開く</button>
+    </div>
+    <br>
+    <h5>ファイルの選択ボタンにドラッグ＆ドロップすることで取り込み可能</h5>
+    <input type="file" id="fileInput" accept=".csv">
+    <div class="container">
+        <form>
+            <label for="cultivationStartDate">栽培開始日:</label>
+            <input type="date" id="cultivationStartDate">
+            <label for="cultivationEndDate">実測データ最終日（現在日など）:</label>
+            <input type="date" id="cultivationEndDate">
+            <label for="tempMin">有効気温下限:</label>
+            <input type="number" value="5" id="tempMin" step="1">
+            <label for="tempMax">有効気温上限:</label>
+            <input type="number" value="30" id="tempMax" step="1">
+            <label class="switch">
+                <input type="checkbox" id="tempSumToggle" checked>
+                <span class="slider round"></span>
+                ：有効気温上限を超える気温の処理
+            </label>
+            <label for="targetTempSum">目標　有効積算温度:</label>
+            <input type="number" id="targetTempSum" step="1" placeholder="例：2500">
+            <label for="recentDays">予測に使う直近日数:</label>
+            <input type="number" value="14" id="recentDays" step="1" min="2">
+            <button type="button" id="updateButton">データ更新／再計算</button>
+        </form>
+
+        <div class="table-container">
+            <h2>このアプリケーションでの定義</h2>
+            <table>
+                <tr>
+                    <th>項目</th>
+                    <th>内容</th>
+                </tr>
+                <tr>
+                    <td>有効積算温度</td>
+                    <td>有効気温上限と下限の範囲にある気温から有効気温下限を減じた値を積算</td>
+                </tr>
+                <tr>
+                    <td>有効気温上限を超える気温の処理</td>
+                    <td>ＯＮ：気温が有効気温上限を超える場合、有効気温上限に換える</br>ＯＦＦ：有効気温上限を超える気温は省く</td>
+                </tr>
+                <tr>
+                    <td>目標到達予測</td>
+                    <td>「実測データ最終日」までの実測の有効積算温度に対し、直近N日間の平均日加算量で単純に将来を延長し、目標値に到達する日を推定する（単純外挿法）。気温の季節変化や天気予報は考慮していないため、目安として利用すること。</td>
+                </tr>
+            </table>
+        </div>
+
+        <div id="results">
+            <h2>集計結果</h2>
+            <table id="cumulativeDataTable" class="cumulativeDataTable"></table>
+        </div>
+    </div>
+
+    <h3 class="dailyTitle" style="display: none;">日データ（平均気温）</h3>
+        <div class="chart-container">
+            <canvas id="dailyTempChart" width="200" height="150"></canvas>
+        </div>
+        <h3 class="cumulativeTitle" style="display: none;">有効積算温度と目標到達予測</h3>
+        <div class="chart-container">
+            <canvas id="cumulativeTempChart" width="200" height="150"></canvas>
+        </div>
+
+    <script>
+function updateDateFields() {
+ const currentDate = new Date();
+ const currentYear = currentDate.getFullYear();
+ const currentMonth = String(currentDate.getMonth() + 1).padStart(2, '0');
+ const currentDay = String(currentDate.getDate()).padStart(2, '0');
+
+ const startDateInput = document.getElementById('cultivationStartDate');
+ const endDateInput = document.getElementById('cultivationEndDate');
+
+ startDateInput.value = `${currentYear}-01-01`;
+ endDateInput.value = `${currentYear}-${currentMonth}-${currentDay}`;
+}
+
+window.onload = updateDateFields;
+
+let dailyTempChart;
+let cumulativeTempChart;
+let rawData = [];  // パース済みの生データ（date, temperature）
+
+document.addEventListener('DOMContentLoaded', function() {
+    document.getElementById('fileInput').addEventListener('change', handleFileSelect, false);
+    document.getElementById('updateButton').addEventListener('click', function() {
+        if (!rawData.length) {
+            alert('先にCSVファイルを選択してください。');
+            return;
+        }
+        runCalculation();
+    }, false);
+});
+
+function shiftJISToUTF8(arrayBuffer) {
+    const decoder = new TextDecoder('shift-jis');
+    const uint8Array = new Uint8Array(arrayBuffer);
+    return decoder.decode(uint8Array);
+}
+
+// パース：年・月・日・平均気温のみを取り出す
+function parseCSV(content) {
+    const lines = content.trim().split('\n').filter(line => line.trim() !== "");
+
+    let lines1 = lines[2].split(',');
+    let lines2 = lines[3].split(',');
+    let lines3 = lines[4].split(',');
+
+    let combinedHead = [];
+    for (let i = 0; i < lines1.length; i++) {
+        combinedHead.push(lines1[i].replace(/\r/g, '') + lines2[i].replace(/\r/g, '') + lines3[i].replace(/\r/g, ''));
+    }
+
+    const targetHeaders = ["年", "月", "日", "平均気温(℃)"];
+    let indicesToSelect = targetHeaders.map(header => combinedHead.indexOf(header));
+
+    const dataLines = lines.slice(6).map(line => {
+        const cols = line.split(',');
+        const selectedCols = indicesToSelect.map(index => index >= 0 ? cols[index] || '0' : '0');
+        return selectedCols.join(',');
+    });
+
+    dataLines.unshift(targetHeaders.join(','));
+
+    return dataLines.slice(1).map(line => {
+        const cols = line.split(",");
+        return {
+            date: new Date(Date.UTC(cols[0], cols[1] - 1, cols[2])),
+            temperature: parseFloat(cols[3]) || 0
+        };
+    });
+}
+
+function handleFileSelect() {
+    const file = document.getElementById("fileInput").files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function (e) {
+        const utf8Content = shiftJISToUTF8(e.target.result);
+        rawData = parseCSV(utf8Content);
+        runCalculation();
+
+        const dailyTitles = document.getElementsByClassName("dailyTitle");
+        for (let el of dailyTitles) el.style.display = "block";
+        const cumulativeTitles = document.getElementsByClassName("cumulativeTitle");
+        for (let el of cumulativeTitles) el.style.display = "block";
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+function parseDateInputAsUTC(value) {
+    // "YYYY-MM-DD" をUTC 0時として扱う（タイムゾーンによるズレを防止）
+    return new Date(value + 'T00:00:00Z');
+}
+
+function filterData(data, graphStart, graphEnd) {
+    return data.filter(d => d.date >= graphStart && d.date <= graphEnd);
+}
+
+// 実測期間の有効積算温度（日次推移）を計算
+function calculateCumulativeTemperature(data, startDate, endDate, tempMin, tempMax, tempSumToggle) {
+    let tempSum = 0;
+    let validDataCount = 0;
+    const cumulative = { dates: [], temperature: [] };
+
+    data.forEach(entry => {
+        const date = new Date(entry.date);
+        if (date >= startDate && date <= endDate) {
+            let temperature = entry.temperature;
+            if (tempSumToggle && temperature > tempMax) {
+                temperature = tempMax;
+            }
+            if (temperature >= tempMin && temperature <= tempMax) {
+                tempSum += (temperature - tempMin);
+                validDataCount++;
+            }
+            cumulative.dates.push(entry.date.toISOString().split('T')[0]);
+            cumulative.temperature.push(tempSum);
+        }
+    });
+
+    cumulative.validDataCount = validDataCount;
+    return cumulative;
+}
+
+// 直近N日間の平均日加算量を算出
+function calculateAverageDailyIncrement(cumulative, recentDays) {
+    const len = cumulative.temperature.length;
+    if (len < 2) return 0;
+    const n = Math.min(recentDays, len - 1);
+    const endValue = cumulative.temperature[len - 1];
+    const startValue = cumulative.temperature[len - 1 - n];
+    return (endValue - startValue) / n;
+}
+
+// 目標値への到達予測
+function predictTargetDate(cumulative, target, avgIncrement) {
+    const result = { hasTarget: target !== null && !isNaN(target) };
+    if (!result.hasTarget) return result;
+
+    const lastValue = cumulative.temperature[cumulative.temperature.length - 1];
+    const lastDateStr = cumulative.dates[cumulative.dates.length - 1];
+    const lastDate = parseDateInputAsUTC(lastDateStr);
+
+    if (lastValue >= target) {
+        // すでに到達済み：到達日を実測データから逆引き
+        const idx = cumulative.temperature.findIndex(v => v >= target);
+        result.reached = true;
+        result.reachedDate = cumulative.dates[idx];
+        return result;
+    }
+
+    result.reached = false;
+    result.remaining = target - lastValue;
+    result.avgIncrement = avgIncrement;
+
+    if (avgIncrement <= 0) {
+        result.error = true;
+        return result;
+    }
+
+    const daysNeeded = Math.ceil(result.remaining / avgIncrement);
+    const predictedDate = new Date(lastDate);
+    predictedDate.setUTCDate(predictedDate.getUTCDate() + daysNeeded);
+
+    const projDates = [];
+    const projValues = [];
+    let cur = lastValue;
+    for (let i = 1; i <= daysNeeded; i++) {
+        const d = new Date(lastDate);
+        d.setUTCDate(d.getUTCDate() + i);
+        cur += avgIncrement;
+        projDates.push(d.toISOString().split('T')[0]);
+        projValues.push(cur);
+    }
+
+    result.daysNeeded = daysNeeded;
+    result.predictedDate = predictedDate.toISOString().split('T')[0];
+    result.projDates = projDates;
+    result.projValues = projValues;
+    return result;
+}
+
+function runCalculation() {
+    const startDate = parseDateInputAsUTC(document.getElementById("cultivationStartDate").value);
+    const endDate = parseDateInputAsUTC(document.getElementById("cultivationEndDate").value);
+    const tempMin = parseFloat(document.getElementById("tempMin").value);
+    const tempMax = parseFloat(document.getElementById("tempMax").value);
+    const tempSumToggle = document.getElementById('tempSumToggle').checked;
+    const targetRaw = document.getElementById("targetTempSum").value;
+    const target = targetRaw === "" ? null : parseFloat(targetRaw);
+    const recentDays = Math.max(2, parseInt(document.getElementById("recentDays").value) || 14);
+
+    // 日データ表示用（前後1か月の余裕を持たせる）
+    const graphStart = new Date(startDate);
+    graphStart.setUTCMonth(graphStart.getUTCMonth() - 1);
+    const graphEnd = new Date(endDate);
+    graphEnd.setUTCMonth(graphEnd.getUTCMonth() + 1);
+    const filteredData = filterData(rawData, graphStart, graphEnd);
+
+    const cumulative = calculateCumulativeTemperature(rawData, startDate, endDate, tempMin, tempMax, tempSumToggle);
+
+    if (cumulative.dates.length === 0) {
+        alert('指定した期間に該当するデータがありません。日付やCSVの内容を確認してください。');
+        return;
+    }
+
+    const avgIncrement = calculateAverageDailyIncrement(cumulative, recentDays);
+    const prediction = predictTargetDate(cumulative, target, avgIncrement);
+
+    updateDailyChart(filteredData, startDate, endDate, tempMin, tempMax);
+    updateCumulativeChart(cumulative, startDate, endDate, target, prediction);
+    updateTable(cumulative, startDate, endDate, target, avgIncrement, recentDays, prediction);
+}
+
+function updateDailyChart(data, startDate, endDate, tempMin, tempMax) {
+    const dates = data.map(d => d.date.toISOString().split('T')[0]);
+    const temperatures = data.map(d => d.temperature);
+
+    const tempAnnotations = [
+        { type: 'line', scaleID: 'x', value: startDate.toISOString().split('T')[0], borderColor: 'red', borderWidth: 2 },
+        { type: 'line', scaleID: 'x', value: endDate.toISOString().split('T')[0], borderColor: 'blue', borderWidth: 2 },
+        { type: 'line', scaleID: 'y', value: tempMax, borderColor: 'gray', borderWidth: 2, borderDash: [10, 5] },
+        { type: 'line', scaleID: 'y', value: tempMin, borderColor: 'gray', borderWidth: 2, borderDash: [10, 5] }
+    ];
+
+    if (dailyTempChart) dailyTempChart.destroy();
+    const ctxTemp = document.getElementById('dailyTempChart').getContext('2d');
+    dailyTempChart = new Chart(ctxTemp, {
+        type: 'line',
+        data: {
+            labels: dates,
+            datasets: [{
+                label: '平均気温(℃)',
+                data: temperatures,
+                borderColor: 'rgba(255, 99, 132, 1)',
+                fill: false
+            }]
+        },
+        options: {
+            layout: { padding: { left: 20, right: 20, top: 20, bottom: 20 } },
+            plugins: {
+                annotation: { annotations: tempAnnotations },
+                legend: { labels: { font: { size: 40 } } }
+            },
+            scales: {
+                x: { ticks: { font: { size: 25 } }, title: { display: true, text: '日付', font: { size: 25 } } },
+                y: { suggestedMax: 35, ticks: { font: { size: 25 } }, title: { display: true, text: '', font: { size: 25 } } }
+            }
+        }
+    });
+}
+
+function updateCumulativeChart(cumulative, startDate, endDate, target, prediction) {
+    let labels = cumulative.dates.slice();
+    let actualData = cumulative.temperature.slice();
+    let projectedData = new Array(cumulative.temperature.length - 1).fill(null);
+    projectedData.push(cumulative.temperature[cumulative.temperature.length - 1]);
+
+    if (prediction.hasTarget && !prediction.reached && !prediction.error && prediction.projDates) {
+        labels = labels.concat(prediction.projDates);
+        actualData = actualData.concat(new Array(prediction.projDates.length).fill(null));
+        projectedData = projectedData.concat(prediction.projValues);
+    }
+
+    const annotations = {
+        startLine: { type: 'line', scaleID: 'x', value: startDate.toISOString().split('T')[0], borderColor: 'red', borderWidth: 2 },
+        endLine: { type: 'line', scaleID: 'x', value: endDate.toISOString().split('T')[0], borderColor: 'blue', borderWidth: 2 }
+    };
+
+    if (prediction.hasTarget && !isNaN(target)) {
+        annotations.targetLine = {
+            type: 'line', scaleID: 'y', value: target,
+            borderColor: 'orange', borderWidth: 2, borderDash: [6, 6],
+            label: { display: true, content: `目標:${target}`, position: 'end', backgroundColor: 'orange' }
+        };
+    }
+
+    if (prediction.hasTarget && !prediction.reached && !prediction.error && prediction.predictedDate) {
+        annotations.predictedLine = {
+            type: 'line', scaleID: 'x', value: prediction.predictedDate,
+            borderColor: 'green', borderWidth: 2, borderDash: [6, 6],
+            label: { display: true, content: `到達予測:${prediction.predictedDate}`, position: 'start', backgroundColor: 'green' }
+        };
+    }
+
+    if (prediction.hasTarget && prediction.reached) {
+        annotations.reachedLine = {
+            type: 'line', scaleID: 'x', value: prediction.reachedDate,
+            borderColor: 'green', borderWidth: 2,
+            label: { display: true, content: `到達済:${prediction.reachedDate}`, position: 'start', backgroundColor: 'green' }
+        };
+    }
+
+    const datasets = [
+        {
+            label: '有効積算温度(℃)【実測】',
+            data: actualData,
+            borderColor: 'rgba(75, 192, 192, 1)',
+            fill: false,
+            spanGaps: false
+        }
+    ];
+
+    if (prediction.hasTarget && !prediction.reached && !prediction.error) {
+        datasets.push({
+            label: '有効積算温度(℃)【予測（直近平均で外挿）】',
+            data: projectedData,
+            borderColor: 'rgba(75, 192, 192, 0.6)',
+            borderDash: [6, 4],
+            fill: false,
+            spanGaps: false
+        });
+    }
+
+    if (cumulativeTempChart) cumulativeTempChart.destroy();
+    const ctxTemp = document.getElementById('cumulativeTempChart').getContext('2d');
+    cumulativeTempChart = new Chart(ctxTemp, {
+        type: 'line',
+        data: { labels, datasets },
+        options: {
+            layout: { padding: 20 },
+            plugins: {
+                annotation: { annotations },
+                legend: { labels: { font: { size: 24 } } }
+            },
+            scales: {
+                x: { ticks: { font: { size: 20 } }, title: { display: true, text: '日付', font: { size: 25 } } },
+                y: { ticks: { font: { size: 25 } }, title: { display: true, text: '', font: { size: 25 } } }
+            }
+        }
+    });
+}
+
+function updateTable(cumulative, startDate, endDate, target, avgIncrement, recentDays, prediction) {
+    const cultivationDays = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24) + 1);
+    const lastValue = cumulative.temperature[cumulative.temperature.length - 1];
+
+    const rows = [
+        { label: "栽培期間の日数 (Cultivation Period in Days)", value: cultivationDays },
+        { label: "有効データ数 (Valid Data Count)", value: cumulative.validDataCount },
+        { label: "現在の有効積算温度（実測最終日時点）", value: Math.floor(lastValue) },
+        { label: `直近${recentDays}日間の平均日加算量`, value: avgIncrement.toFixed(2) }
+    ];
+
+    if (prediction.hasTarget) {
+        rows.push({ label: "目標　有効積算温度", value: target });
+        if (prediction.reached) {
+            rows.push({ label: "判定", value: `実測データ最終日までに到達済み（到達日: ${prediction.reachedDate}）`, highlight: true });
+        } else if (prediction.error) {
+            rows.push({ label: "判定", value: "直近の平均加算量が0以下のため予測不可（気温上昇傾向がありません）", highlight: true });
+        } else {
+            rows.push({ label: "残り必要な有効積算温度", value: Math.ceil(prediction.remaining) });
+            rows.push({ label: "到達まで残り日数（予測）", value: `約${prediction.daysNeeded}日` });
+            rows.push({ label: "目標到達予測日", value: prediction.predictedDate, highlight: true });
+        }
+    }
+
+    const table = document.getElementById("cumulativeDataTable");
+    table.innerHTML = "";
+    rows.forEach(row => {
+        const tr = document.createElement("tr");
+        if (row.highlight) tr.className = "highlight";
+        const tdLabel = document.createElement("td");
+        const tdValue = document.createElement("td");
+        tdLabel.textContent = row.label;
+        tdValue.textContent = row.value;
+        tr.appendChild(tdLabel);
+        tr.appendChild(tdValue);
+        table.appendChild(tr);
+    });
+}
+    </script>
+</body>
+</html>
