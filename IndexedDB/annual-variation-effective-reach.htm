@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>有効積算温度の到達日予測</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+body {
+  font-family: "Segoe UI", "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;
+  margin: 20px;
+  line-height: 1.6;
+  background: #f5f7f7;
+  color: #333;
+}
+
+/* ===== 見出し ===== */
+h1, h2, h3, h4 {
+  background-color: #4CAF50;
+  color: white;
+  padding: 8px 12px;
+  border-radius: 4px;
+  width: fit-content;
+  margin: 10px 0;
+}
+h1 { text-align: center; }
+
+/* ===== 入力フォーム ===== */
+form, .input-panel {
+  margin: 15px 0;
+  padding: 10px 15px;
+  background-color: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  display: flex;          /* 横並び */
+  flex-wrap: wrap;        /* はみ出す場合は折り返し */
+  gap: 10px 15px;         /* 項目間の余白 */
+  align-items: center;    /* 縦位置を中央揃え */
+}
+
+.input-panel label {
+  display: flex;
+  align-items: center;
+  font-weight: bold;
+  font-size: 14px;
+  white-space: nowrap; /* ラベルを折り返さない */
+}
+
+.input-panel input[type="date"],
+.input-panel input[type="file"],
+.input-panel input[type="number"] {
+  width: auto;        /* 必要な幅だけ */
+  min-width: 70px;    /* 数値用は最小幅確保 */
+  padding: 4px 6px;
+  font-size: 14px;
+  margin-left: 4px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+.input-panel button {
+  background-color: #4CAF50;
+  color: white;
+  padding: 6px 14px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+.input-panel button:hover {
+  background-color: #45a049;
+}
+/* ===== レイアウト ===== */
+.container {
+  display: flex;
+  gap: 20px;
+  margin-top: 10px;     /* ← 20px → 10px に縮めた */
+  flex-wrap: wrap;
+  align-items: flex-start; /* グラフと表の上端を揃える */
+}
+
+.table-container, .chart-container {
+  flex: 1;
+  background: #fff;
+  padding: 15px;
+  border-radius: 8px;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+  min-width: 300px;
+}
+
+/* ===== テーブル ===== */
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 14px;
+  margin-top: 10px;
+  table-layout: fixed; /* 列幅を固定 */
+}
+th, td {
+  border: 1px solid #ccc;
+  padding: 8px;
+  text-align: center;
+}
+th {
+  background: #f1f1f1;
+}
+tr:nth-child(even) td {
+  background: #fafafa;
+}
+.table-container {
+  max-width: 600px; /* 表の最大幅を制限 */
+  width: 100%;
+  margin: 0 auto;    /* 中央寄せ（任意） */
+}
+#resultTable {
+  table-layout: fixed;
+  width: 100%;
+}
+
+
+/* ===== チャート ===== */
+.chart-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+.chart-container canvas {
+  width: 100% !important;
+  height: auto !important;
+}
+
+
+/* ===== 印刷用 ===== */
+@media print {
+  * { margin: 0; padding: 0; }
+  .table-container, h5, .no-print, img { display: none; }
+  .chart-container, .content {
+    page-break-inside: avoid;
+    page-break-before: auto;
+    page-break-after: auto;
+  }
+}
+
+  </style>
+</head>
+<body>
+  <h2>有効積算温度の到達日表示</h2>
+
+  <div>
+  <br>
+    <label>CSVファイル読み込み: 
+      <input type="file" id="fileInput">
+      <button type="button" id="clearCacheBtn">IndexedDBデータをメモリから削除</button>
+      <span id="cacheStatus"></span>
+    </label>
+  </div>
+  <div>
+    <label>開始日: <input type="date" id="startDate"></label><br><br>
+    <label>目標積算温度(℃): <input type="number" id="targetTemp" value="1000"></label><br><br>
+    <label>有効温度下限(℃): <input type="number" id="tempMin" value="10"></label><br>
+    <label>有効温度上限(℃): <input type="number" id="tempMax" value="30"></label><br><br>
+    <label>
+      <input type="checkbox" id="useUpperLimit" checked>
+      上限超過は無効とする
+    </label>
+    <button onclick="analyze()">計算</button>
+  </div>
+
+<div class="container">
+  <div class="table-container">
+    <h3>年ごとの到達日一覧</h3>
+    <table id="resultTable">
+      <colgroup>
+        <col style="width: 20%;">
+        <col style="width: 20%;">
+        <col style="width: 20%;">
+      </colgroup>
+      <thead>
+        <tr>
+          <th>年</th>
+          <th>到達日数</th>
+          <th>到達日</th>
+        </tr>
+      </thead>
+      <tbody>
+        <!-- データ行はJSなどで動的に追加 -->
+      </tbody>
+    </table>
+  </div>
+  <div class="chart-container">
+    <canvas id="chart"></canvas>
+  </div>
+</div>
+
+<script>
+  let weatherData = [];
+
+  function handleFileSelect(content, fileName) {
+    let utf8Content = null;
+    if (typeof content === 'string') {
+        utf8Content = content;
+    } else {
+        if (typeof CsvIndexedDBCache !== 'undefined' && CsvIndexedDBCache.memory.content) {
+            utf8Content = CsvIndexedDBCache.memory.content;
+        }
+    }
+
+    if (utf8Content !== null) {
+        weatherData = parseCSV(utf8Content);
+        analyze();
+    } else {
+        const file = document.getElementById("fileInput").files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = evt => {
+            weatherData = parseCSV(evt.target.result);
+            analyze();
+        };
+        reader.readAsText(file, "Shift-JIS");
+    }
+  }
+
+  window.addEventListener("DOMContentLoaded", () => {
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const jan1 = new Date(currentYear, 0, 1);
+    const yyyy = jan1.getFullYear();
+    const mm = String(jan1.getMonth() + 1).padStart(2, "0");
+    const dd = String(jan1.getDate()).padStart(2, "0");
+    const formatted = `${yyyy}-${mm}-${dd}`;
+    document.getElementById("startDate").value = formatted;
+
+    function restoreFromCache(content, fileName) {
+        handleFileSelect(content, fileName);
+    }
+
+    CsvIndexedDBCache.setupUI({
+        dbName: 'annual_variation_effective_reach_db',
+        fileInputId: 'fileInput',
+        clearBtnId: 'clearCacheBtn',
+        statusId: 'cacheStatus',
+        onRestored: restoreFromCache,
+        onCleared: function() {
+            weatherData = [];
+            const tbody = document.querySelector("table tbody");
+            if (tbody) tbody.innerHTML = "";
+            // canvasのリセット
+            const chartCanvas = document.getElementById("chart");
+            if (chartCanvas) {
+                const ctx = chartCanvas.getContext('2d');
+                ctx.clearRect(0, 0, chartCanvas.width, chartCanvas.height);
+            }
+        }
+    });
+
+    // setupUI内部のDOMContentLoadedリスナーは登録タイミングの都合で発火しないため、明示的に復元する
+    CsvIndexedDBCache.load('annual_variation_effective_reach_db').then(function(saved) {
+        if (saved && saved.mode === 'single') {
+            CsvIndexedDBCache.memory.content = saved.content;
+            CsvIndexedDBCache.memory.fileName = saved.fileName || '保存済みCSV';
+            CsvIndexedDBCache.updateStatus(document.getElementById('cacheStatus'));
+            restoreFromCache(saved.content, saved.fileName);
+        }
+    }).catch(function(err) { console.warn('IndexedDB復元失敗:', err); });
+  });
+
+  function parseCSV(text) {
+    const lines = text.trim().split("\n");
+    const headers = lines[2].split(",");
+    const yearIndex = headers.findIndex(h => h === "年");
+    const monthIndex = headers.findIndex(h => h === "月");
+    const dayIndex = headers.findIndex(h => h === "日");
+    const tempIndex = headers.findIndex(h => h === "平均気温(℃)");
+
+    if ([yearIndex, monthIndex, dayIndex, tempIndex].includes(-1)) {
+      alert("CSVの列名が正しく認識できません");
+      return [];
+    }
+
+    let data = [];
+    for (let i = 3; i < lines.length; i++) {
+      const cells = lines[i].split(",");
+      const year = parseInt(cells[yearIndex]);
+      const month = parseInt(cells[monthIndex]);
+      const day = parseInt(cells[dayIndex]);
+      const temp = parseFloat(cells[tempIndex]);
+      const date = new Date(year, month - 1, day);
+
+      if (!isNaN(temp)) {
+        data.push({ date, temp });
+      }
+    }
+    return data;
+  }
+
+function analyze() {
+  if (weatherData.length === 0) {
+    alert("先にCSVを読み込んでください");
+    return;
+  }
+
+  const startDateInput = new Date(document.getElementById("startDate").value);
+  const targetTemp = parseFloat(document.getElementById("targetTemp").value);
+  const tempMin = parseFloat(document.getElementById("tempMin").value);
+  const tempMax = parseFloat(document.getElementById("tempMax").value);
+  const useUpperLimit = document.getElementById("useUpperLimit").checked;
+
+  const startMonth = startDateInput.getMonth();
+  const startDay = startDateInput.getDate();
+
+  const results = {};
+  const years = [...new Set(weatherData.map(d => d.date.getFullYear()))];
+
+  years.forEach(year => {
+    const startDate = new Date(year, startMonth, startDay);
+    let total = 0;
+    let days = 0;
+    let reachedDate = null;
+
+    for (const row of weatherData) {
+      if (row.date < startDate) continue;
+
+      const rowYear = row.date.getFullYear();
+      if (rowYear !== year && rowYear !== year + 1) break; // 翌年まで許容
+
+      let effTemp = 0;
+      if (row.temp >= tempMin) {
+        let adjusted = row.temp;
+
+        if (useUpperLimit && row.temp > tempMax) {
+          adjusted = tempMax;
+        } else if (!useUpperLimit && row.temp > tempMax) {
+          adjusted = NaN;
+        }
+
+        if (!isNaN(adjusted) && adjusted >= tempMin) {
+          effTemp = adjusted - tempMin;
+        }
+      }
+
+      total += effTemp;
+      days++;
+
+      if (total >= targetTemp) {
+        reachedDate = new Date(startDate);
+        reachedDate.setDate(startDate.getDate() + days);
+        break;
+      }
+    }
+
+    results[year] = {
+      reached: !!reachedDate,
+      days: reachedDate ? days : null,
+      date: reachedDate
+    };
+  });
+
+  // 表に出力
+  const table = document.getElementById("resultTable");
+  table.innerHTML = "<tr><th>年</th><th>到達日数</th><th>到達日</th></tr>";
+  const labels = [];
+  const values = [];
+
+  for (const year of Object.keys(results).sort()) {
+    const r = results[year];
+    if (r.reached) {
+      const d = r.date;
+      const dStr =
+        d.getFullYear() + "-" +
+        (d.getMonth() + 1).toString().padStart(2, "0") + "-" +
+        d.getDate().toString().padStart(2, "0");
+      table.innerHTML += `<tr><td>${year}</td><td>${r.days}</td><td>${dStr}</td></tr>`;
+      labels.push(year);
+      values.push(r.days);
+    } else {
+      table.innerHTML += `<tr><td>${year}</td><td>—</td><td>未到達</td></tr>`;
+    }
+  }
+
+  // グラフ表示
+  const ctx = document.getElementById("chart").getContext("2d");
+  if (window.resultChart) {
+    window.resultChart.destroy();
+  }
+  window.resultChart = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels,
+      datasets: [{
+        label: "目標積算温度到達日数",
+        data: values,
+        borderColor: "red",
+        borderWidth: 2,
+        fill: false
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: {
+          labels: { font: { size: 16 } }
+        },
+        title: {
+          display: true,
+          text: "有効積算温度の到達日数",
+          font: { size: 24 }
+        }
+      },
+      scales: {
+        y: {
+          title: { display: true, text: "日数", font: { size: 16 } },
+          ticks: { font: { size: 14 } }
+        },
+        x: {
+          title: { display: true, text: "年", font: { size: 16 } },
+          ticks: { font: { size: 14 } }
+        }
+      }
+    }
+  });
+}
+</script>
+<script>
+(function (global) {
+  const STORE_NAME = 'csvStore';
+  const KEY_SINGLE = 'lastCsv';
+  const KEY_MULTIPLE = 'lastCsvMultiple';
+
+  const memory = { content: null, fileName: null, files: null };
+
+  function injectStyles() {
+    if (document.getElementById('csv-idb-cache-style')) return;
+    const style = document.createElement('style');
+    style.id = 'csv-idb-cache-style';
+    style.textContent = `
+#clearCacheBtn {
+  background-color: #e53935;
+  color: white;
+  padding: 10px 20px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-left: 0.5em;
+}
+#clearCacheBtn:hover { background-color: #c62828; }
+#cacheStatus {
+  display: inline-block;
+  margin-left: 0.8em;
+  font-size: 0.95em;
+  color: #555;
+}`;
+    document.head.appendChild(style);
+  }
+
+  function openDB(dbName) {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open(dbName, 1);
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => resolve(req.result);
+      req.onupgradeneeded = (event) => {
+        const db = event.target.result;
+        if (!db.objectStoreNames.contains(STORE_NAME)) {
+          db.createObjectStore(STORE_NAME);
+        }
+      };
+    });
+  }
+
+  function put(db, key, value) {
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      tx.objectStore(STORE_NAME).put(value, key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  function get(db, key) {
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const req = tx.objectStore(STORE_NAME).get(key);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  function remove(db, key) {
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      tx.objectStore(STORE_NAME).delete(key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  async function save(dbName, fileName, content) {
+    memory.content = content;
+    memory.fileName = fileName;
+    memory.files = null;
+    const db = await openDB(dbName);
+    await put(db, KEY_SINGLE, { fileName, content, savedAt: Date.now() });
+    await remove(db, KEY_MULTIPLE);
+  }
+
+  async function saveMultiple(dbName, files) {
+    memory.files = files.slice();
+    memory.content = null;
+    memory.fileName = null;
+    const db = await openDB(dbName);
+    await put(db, KEY_MULTIPLE, { files, savedAt: Date.now() });
+    await remove(db, KEY_SINGLE);
+  }
+
+  async function load(dbName) {
+    const db = await openDB(dbName);
+    const multiple = await get(db, KEY_MULTIPLE);
+    if (multiple && multiple.files && multiple.files.length) {
+      return { mode: 'multiple', files: multiple.files };
+    }
+    const single = await get(db, KEY_SINGLE);
+    if (single && single.content) {
+      return { mode: 'single', fileName: single.fileName, content: single.content };
+    }
+    return null;
+  }
+
+  async function clear(dbName) {
+    memory.content = null;
+    memory.fileName = null;
+    memory.files = null;
+    const db = await openDB(dbName);
+    await remove(db, KEY_SINGLE);
+    await remove(db, KEY_MULTIPLE);
+  }
+
+  function shiftJISToUTF8(arrayBuffer) {
+    const decoder = new TextDecoder('shift-jis');
+    const uint8Array = new Uint8Array(arrayBuffer);
+    return decoder.decode(uint8Array);
+  }
+
+  function updateStatus(statusEl) {
+    if (!statusEl) return;
+    if (memory.files && memory.files.length) {
+      statusEl.textContent = `メモリ保持中: ${memory.files.length}件のCSV`;
+    } else if (memory.content && memory.fileName) {
+      statusEl.textContent = `メモリ保持中: ${memory.fileName}`;
+    } else {
+      statusEl.textContent = '';
+    }
+  }
+
+  function setupUI(options) {
+    const {
+      dbName,
+      fileInputId = 'fileInput',
+      clearBtnId = 'clearCacheBtn',
+      statusId = 'cacheStatus',
+      onRestored,
+      onCleared,
+      isMultiple = false
+    } = options;
+
+    injectStyles();
+
+    const clearBtn = document.getElementById(clearBtnId);
+    const statusEl = document.getElementById(statusId);
+    const fileInput = document.getElementById(fileInputId);
+
+    // IndexedDBからの自動復元
+    document.addEventListener('DOMContentLoaded', async () => {
+      try {
+        const saved = await load(dbName);
+        if (!saved) return;
+        if (saved.mode === 'multiple') {
+          memory.files = saved.files.slice();
+          memory.content = null;
+          memory.fileName = null;
+          updateStatus(statusEl);
+          if (typeof onRestored === 'function') {
+            onRestored(saved.files);
+          }
+        } else {
+          memory.content = saved.content;
+          memory.fileName = saved.fileName || '保存済みCSV';
+          memory.files = null;
+          updateStatus(statusEl);
+          if (typeof onRestored === 'function') {
+            onRestored(saved.content, saved.fileName);
+          }
+        }
+      } catch (err) {
+        console.warn('IndexedDB復元失敗:', err);
+      }
+    });
+
+    // ファイル選択時の自動保存処理
+    if (fileInput) {
+      fileInput.addEventListener('change', async (event) => {
+        const files = event.target.files;
+        if (!files || files.length === 0) return;
+
+        try {
+          if (isMultiple) {
+            const loadedFiles = [];
+            for (const file of files) {
+              const arrayBuffer = await file.arrayBuffer();
+              const text = shiftJISToUTF8(arrayBuffer);
+              loadedFiles.push({ name: file.name, content: text });
+            }
+            await saveMultiple(dbName, loadedFiles);
+            updateStatus(statusEl);
+            if (typeof onRestored === 'function') {
+              onRestored(loadedFiles);
+            }
+          } else {
+            const file = files[0];
+            const arrayBuffer = await file.arrayBuffer();
+            const text = shiftJISToUTF8(arrayBuffer);
+            await save(dbName, file.name, text);
+            updateStatus(statusEl);
+            if (typeof onRestored === 'function') {
+              onRestored(text, file.name);
+            }
+          }
+        } catch (err) {
+          console.error('ファイルの自動IndexedDB保存に失敗しました:', err);
+        }
+      });
+    }
+
+    if (clearBtn) {
+      clearBtn.addEventListener('click', async () => {
+        const saved = memory.content || memory.files || (await load(dbName));
+        if (!saved) {
+          alert('削除するIndexedDBデータはありません。');
+          return;
+        }
+        if (!confirm('IndexedDBに保存したCSVデータとメモリ上のデータを削除しますか？')) {
+          return;
+        }
+        try {
+          await clear(dbName);
+        } catch (err) {
+          console.warn('IndexedDB削除失敗:', err);
+          alert('IndexedDBデータの削除に失敗しました。');
+          return;
+        }
+        if (fileInput) fileInput.value = '';
+        updateStatus(statusEl);
+        if (typeof onCleared === 'function') onCleared();
+        alert('IndexedDBデータとメモリ上のデータを削除しました。');
+      });
+    }
+  }
+
+  global.CsvIndexedDBCache = {
+    memory,
+    save,
+    saveMultiple,
+    load,
+    clear,
+    updateStatus,
+    setupUI,
+    shiftJISToUTF8
+  };
+})(window);
+
+</script>
+</body>
+</html>

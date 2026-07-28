@@ -1,0 +1,930 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta name="discription" content="気象データの日別値と平年値をグラフ化する。">  
+  <meta name="auther" content="澤田泰人">
+  <meta name="date" content="2025年5月4日">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>気象経過</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@latest"></script>
+<style>
+/* --- 根本的な揺れ防止対策 --- */
+html {
+  /* 常にスクロールバーの領域を確保し、グラフ出現時の横揺れを防ぐ */
+  overflow-y: scroll;
+}
+
+/* 印刷用の設定 */
+@media print {
+  * { margin: 0; padding: 0; }
+  input, button, select, label, form, h5, h3, .right-align, .container {
+    display: none !important;
+  }
+}
+
+/* 全体の基本設定 */
+body {
+  font-family: sans-serif;
+  margin: 0;
+  padding: 0;
+  background-color: #f4f4f4;
+  color: #333;
+}
+
+/* ボタンのスタイル */
+button {
+  background-color: #4CAF50;
+  color: white;
+  padding: 10px 20px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+button:hover { background-color: #45a049; }
+
+/* フォームのスタイル */
+form {
+  margin: 20px;
+  padding: 20px;
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* ヘッダーのスタイル */
+h1 {
+  background-color: #4CAF50;
+  color: white;
+  padding: 10px;
+  text-align: center;
+  margin: 0;
+}
+
+h3, h5 { margin: 20px 0 10px 0; }
+h5 { font-size: 14px; color: #666; font-weight: normal; }
+
+/* ラベルの調整 */
+label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: 20px;
+  margin-bottom: 10px;
+}
+
+/* --- 揺れ防止の重要ポイント --- */
+.chart-container {
+  width: 100%;
+  position: relative;
+  /* グラフが描画される前の高さを予約（ガタつき防止） */
+  min-height: 350px; 
+  aspect-ratio: 16 / 9; /* 比率を固定して安定させる */
+  margin-bottom: 30px;
+  background-color: #fff;
+  border-radius: 8px;
+}
+
+canvas {
+  width: 100% !important;
+  height: 100% !important; /* コンテナいっぱいに広げる */
+  display: block;
+}
+
+/* コンテナ */
+.container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  justify-content: flex-start;
+  padding: 20px;
+}
+
+.right-align { text-align: right; margin: 10px 20px; }
+.right-align button { background-color: #2196F3; }
+
+/* 入力要素 */
+input[type="date"], input[type="file"], input[type="number"] {
+  padding: 8px 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+input[type="file"] { width: 100%; max-width: 500px; }
+
+/* グラフエリア */
+#chartcanvas, #annualCharts {
+  padding: 20px;
+  /* 出現時のガタつきを滑らかにする（オプション） */
+  transition: opacity 0.3s ease-in-out;
+}
+
+#chartcanvas > div {
+  margin-bottom: 40px;
+  background-color: #f9f9f9;
+  padding: 15px;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+#chartcanvas h3 { text-align: center; color: #4CAF50; }
+
+/* レスポンシブ対応 */
+@media (max-width: 768px) {
+  .container { flex-direction: column; }
+  form { padding: 20px; margin: 10px; }
+  label { flex-direction: column; align-items: flex-start; }
+  .chart-container { min-height: 250px; }
+}
+</style>
+</head>
+<body>
+  <h1 id="mainTitle">気象経過 地名</h1>
+
+  <!-- 気象庁リンク -->
+  <div class="right-align">
+    <button onclick="window.open('https://www.data.jma.go.jp/gmd/risk/obsdl/index.php', '_blank')">気象庁のサイトを開く</button>
+  </div>
+
+  <!-- ファイル選択 -->
+  <div class="container">
+    <div style="flex: 1; padding: 20px;">
+      <h5>ファイルの選択ボタンにドラッグ＆ドロップすることで取り込み可能</h5>
+      <input type="file" id="fileInput" accept=".csv">
+      <button type="button" id="clearCacheBtn">IndexedDBデータをメモリから削除</button>
+      <span id="cacheStatus"></span>
+    </div>
+  </div>
+
+  <!-- 日付入力フォーム -->
+  <form>
+    <h3>分析期間の設定</h3>
+    <label for="cultivationStartDate">
+      開始日:
+      <input type="date" id="cultivationStartDate">
+    </label>
+    <br>
+    <label for="cultivationEndDate">
+      終了日（最終日）:
+      <input type="date" id="cultivationEndDate">
+    </label>
+    <br>
+    <button type="button" id="updateButton" onclick="handleFileSelect()">データ更新</button>
+  </form>
+
+  <!-- グラフ表示エリア -->
+  <div id="chartcanvas" style="display: none;">
+    <h3>日別データグラフ</h3>
+    
+    <div>
+      <label for="tempMax">
+        気温グラフ - 縦軸最大値（℃）:
+        <input type="number" id="tempMax" value="40" step="5" placeholder="例: 40">
+      </label>
+      <button type="button" class="GraphupdateButton" onclick="handleFileSelect()">グラフ更新</button>
+      <div class="chart-container">
+        <canvas id="dailyTempChart"></canvas>
+      </div>
+    </div>
+
+    <div>
+      <label for="precMax">
+        降水量グラフ - 縦軸最大値（mm）:
+        <input type="number" id="precMax" value="100" step="10" placeholder="例: 100">
+      </label>
+      <button type="button" class="GraphupdateButton" onclick="handleFileSelect()">グラフ更新</button>
+      <div class="chart-container">
+        <canvas id="dailyPrecChart"></canvas>
+      </div>
+    </div>
+
+    <div>
+      <label for="sunMax">
+        日照時間グラフ - 縦軸最大値（時間）:
+        <input type="number" id="sunMax" value="16" step="2" placeholder="例: 15">
+      </label>
+      <button type="button" class="GraphupdateButton" onclick="handleFileSelect()">グラフ更新</button>
+      <div class="chart-container">
+        <canvas id="dailySunChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- 年別グラフ表示エリア -->
+  <div id="annualCharts" style="display: none;">
+    <h3>年別データグラフ</h3>
+    
+    <div class="chart-container">
+      <canvas id="annualTempChart" width="1000" height="400"></canvas>
+    </div>
+
+    <div class="chart-container">
+      <canvas id="annualPrecChart" width="1000" height="400"></canvas>
+    </div>
+
+    <div class="chart-container">
+      <canvas id="annualSunChart" width="1000" height="400"></canvas>
+    </div>
+  </div>
+
+<script>
+(function (global) {
+  const STORE_NAME = 'csvStore';
+  const KEY_SINGLE = 'lastCsv';
+  const KEY_MULTIPLE = 'lastCsvMultiple';
+
+  const memory = { content: null, fileName: null, files: null };
+
+  function injectStyles() {
+    if (document.getElementById('csv-idb-cache-style')) return;
+    const style = document.createElement('style');
+    style.id = 'csv-idb-cache-style';
+    style.textContent = `
+#clearCacheBtn {
+  background-color: #e53935;
+  color: white;
+  padding: 10px 20px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-left: 0.5em;
+}
+#clearCacheBtn:hover { background-color: #c62828; }
+#cacheStatus {
+  display: inline-block;
+  margin-left: 0.8em;
+  font-size: 0.95em;
+  color: #555;
+}`;
+    document.head.appendChild(style);
+  }
+
+  function openDB(dbName) {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open(dbName, 1);
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => resolve(req.result);
+      req.onupgradeneeded = (event) => {
+        const db = event.target.result;
+        if (!db.objectStoreNames.contains(STORE_NAME)) {
+          db.createObjectStore(STORE_NAME);
+        }
+      };
+    });
+  }
+
+  function put(db, key, value) {
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      tx.objectStore(STORE_NAME).put(value, key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  function get(db, key) {
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const req = tx.objectStore(STORE_NAME).get(key);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  function remove(db, key) {
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      tx.objectStore(STORE_NAME).delete(key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  async function save(dbName, fileName, content) {
+    memory.content = content;
+    memory.fileName = fileName;
+    memory.files = null;
+    const db = await openDB(dbName);
+    await put(db, KEY_SINGLE, { fileName, content, savedAt: Date.now() });
+    await remove(db, KEY_MULTIPLE);
+  }
+
+  async function saveMultiple(dbName, files) {
+    memory.files = files.slice();
+    memory.content = null;
+    memory.fileName = null;
+    const db = await openDB(dbName);
+    await put(db, KEY_MULTIPLE, { files, savedAt: Date.now() });
+    await remove(db, KEY_SINGLE);
+  }
+
+  async function load(dbName) {
+    const db = await openDB(dbName);
+    const multiple = await get(db, KEY_MULTIPLE);
+    if (multiple && multiple.files && multiple.files.length) {
+      return { mode: 'multiple', files: multiple.files };
+    }
+    const single = await get(db, KEY_SINGLE);
+    if (single && single.content) {
+      return { mode: 'single', fileName: single.fileName, content: single.content };
+    }
+    return null;
+  }
+
+  async function clear(dbName) {
+    memory.content = null;
+    memory.fileName = null;
+    memory.files = null;
+    const db = await openDB(dbName);
+    await remove(db, KEY_SINGLE);
+    await remove(db, KEY_MULTIPLE);
+  }
+
+  function shiftJISToUTF8(arrayBuffer) {
+    const decoder = new TextDecoder('shift-jis');
+    const uint8Array = new Uint8Array(arrayBuffer);
+    return decoder.decode(uint8Array);
+  }
+
+  function updateStatus(statusEl) {
+    if (!statusEl) return;
+    if (memory.files && memory.files.length) {
+      statusEl.textContent = `メモリ保持中: ${memory.files.length}件のCSV`;
+    } else if (memory.content && memory.fileName) {
+      statusEl.textContent = `メモリ保持中: ${memory.fileName}`;
+    } else {
+      statusEl.textContent = '';
+    }
+  }
+
+  function setupUI(options) {
+    const {
+      dbName,
+      fileInputId = 'fileInput',
+      clearBtnId = 'clearCacheBtn',
+      statusId = 'cacheStatus',
+      onRestored,
+      onCleared,
+      isMultiple = false
+    } = options;
+
+    injectStyles();
+
+    const clearBtn = document.getElementById(clearBtnId);
+    const statusEl = document.getElementById(statusId);
+    const fileInput = document.getElementById(fileInputId);
+
+    // IndexedDBからの自動復元
+    document.addEventListener('DOMContentLoaded', async () => {
+      try {
+        const saved = await load(dbName);
+        if (!saved) return;
+        if (saved.mode === 'multiple') {
+          memory.files = saved.files.slice();
+          memory.content = null;
+          memory.fileName = null;
+          updateStatus(statusEl);
+          if (typeof onRestored === 'function') {
+            onRestored(saved.files);
+          }
+        } else {
+          memory.content = saved.content;
+          memory.fileName = saved.fileName || '保存済みCSV';
+          memory.files = null;
+          updateStatus(statusEl);
+          if (typeof onRestored === 'function') {
+            onRestored(saved.content, saved.fileName);
+          }
+        }
+      } catch (err) {
+        console.warn('IndexedDB復元失敗:', err);
+      }
+    });
+
+    // ファイル選択時の自動保存処理
+    if (fileInput) {
+      fileInput.addEventListener('change', async (event) => {
+        const files = event.target.files;
+        if (!files || files.length === 0) return;
+
+        try {
+          if (isMultiple) {
+            const loadedFiles = [];
+            for (const file of files) {
+              const arrayBuffer = await file.arrayBuffer();
+              const text = shiftJISToUTF8(arrayBuffer);
+              loadedFiles.push({ name: file.name, content: text });
+            }
+            await saveMultiple(dbName, loadedFiles);
+            updateStatus(statusEl);
+            if (typeof onRestored === 'function') {
+              onRestored(loadedFiles);
+            }
+          } else {
+            const file = files[0];
+            const arrayBuffer = await file.arrayBuffer();
+            const text = shiftJISToUTF8(arrayBuffer);
+            await save(dbName, file.name, text);
+            updateStatus(statusEl);
+            if (typeof onRestored === 'function') {
+              onRestored(text, file.name);
+            }
+          }
+        } catch (err) {
+          console.error('ファイルの自動IndexedDB保存に失敗しました:', err);
+        }
+      });
+    }
+
+    if (clearBtn) {
+      clearBtn.addEventListener('click', async () => {
+        const saved = memory.content || memory.files || (await load(dbName));
+        if (!saved) {
+          alert('削除するIndexedDBデータはありません。');
+          return;
+        }
+        if (!confirm('IndexedDBに保存したCSVデータとメモリ上のデータを削除しますか？')) {
+          return;
+        }
+        try {
+          await clear(dbName);
+        } catch (err) {
+          console.warn('IndexedDB削除失敗:', err);
+          alert('IndexedDBデータの削除に失敗しました。');
+          return;
+        }
+        if (fileInput) fileInput.value = '';
+        updateStatus(statusEl);
+        if (typeof onCleared === 'function') onCleared();
+        alert('IndexedDBデータとメモリ上のデータを削除しました。');
+      });
+    }
+  }
+
+  global.CsvIndexedDBCache = {
+    memory,
+    save,
+    saveMultiple,
+    load,
+    clear,
+    updateStatus,
+    setupUI,
+    shiftJISToUTF8
+  };
+})(window);
+
+</script>
+<script>
+let csvData = [];
+let charts = {
+  dailyTemp: null,
+  dailyPrec: null,
+  dailySun: null,
+  annualTemp: null,
+  annualPrec: null,
+  annualSun: null
+};
+
+document.addEventListener('DOMContentLoaded', function() {
+  CsvIndexedDBCache.setupUI({
+    dbName: 'yearly_comparison_plot_db',
+    fileInputId: 'fileInput',
+    clearBtnId: 'clearCacheBtn',
+    statusId: 'cacheStatus',
+    onRestored: function(content, fileName) {
+      loadContent(content, fileName);
+    },
+    onCleared: function() {
+      csvData = [];
+      document.getElementById('mainTitle').textContent = '気象経過 地名';
+      document.getElementById('chartcanvas').style.display = 'none';
+      const annualCharts = document.getElementById('annualCharts');
+      if (annualCharts) annualCharts.style.display = 'none';
+    }
+  });
+
+  // setupUI内部のDOMContentLoadedリスナーは登録タイミングの都合で発火しないため、明示的に復元する
+  CsvIndexedDBCache.load('yearly_comparison_plot_db').then(function(saved) {
+    if (saved && saved.mode === 'single') {
+      CsvIndexedDBCache.memory.content = saved.content;
+      CsvIndexedDBCache.memory.fileName = saved.fileName || '保存済みCSV';
+      CsvIndexedDBCache.updateStatus(document.getElementById('cacheStatus'));
+      loadContent(saved.content, saved.fileName);
+    }
+  }).catch(function(err) { console.warn('IndexedDB復元失敗:', err); });
+});
+
+// ファイル入力とドラッグ&ドロップ対応
+const fileInput = document.getElementById('fileInput');
+
+fileInput.addEventListener('change', function(e) {
+  const file = e.target.files[0];
+  if (file) {
+    processFile(file);
+  }
+});
+
+// ドラッグ&ドロップ
+document.addEventListener('dragover', function(e) {
+  e.preventDefault();
+  fileInput.style.opacity = '0.5';
+});
+
+document.addEventListener('dragleave', function() {
+  fileInput.style.opacity = '1';
+});
+
+fileInput.addEventListener('drop', function(e) {
+  e.preventDefault();
+  fileInput.style.opacity = '1';
+  const file = e.dataTransfer.files[0];
+  if (file && file.name.endsWith('.csv')) {
+    processFile(file);
+  }
+});
+
+function processFile(file) {
+  const reader = new FileReader();
+
+  reader.onload = function(event) {
+    const content = shiftJISToUTF8(event.target.result);
+    loadContent(content, file.name);
+  };
+
+  reader.readAsArrayBuffer(file);
+}
+
+// CSV文字列(UTF-8化済み)からグラフを構築する共通処理
+// 新規ファイル選択時・IndexedDBからの復元時の両方から呼ばれる
+function loadContent(content, fileName) {
+  const nameNoExt = fileName.replace(/\.[^/.]+$/, '');
+  const locationName = nameNoExt.split(/日別値|_/)[0];
+  document.getElementById('mainTitle').textContent = `気象経過 ${locationName}`;
+
+  csvData = parseCSV(content);
+  setDefaultDates();
+  handleFileSelect();
+}
+
+function shiftJISToUTF8(arrayBuffer) {
+  const decoder = new TextDecoder('shift-jis');
+  const uint8Array = new Uint8Array(arrayBuffer);
+  return decoder.decode(uint8Array);
+}
+
+function parseCSV(content) {
+  const lines = content.trim().split('\n').filter(line => line.trim() !== "");
+  let lines1 = lines[2].split(',');
+  let lines2 = lines[3].split(',');
+  let lines3 = lines[4].split(',');
+  let combinedHead = [];
+  for (let i = 0; i < lines1.length; i++) {
+    combinedHead.push(lines1[i].replace(/\r/g, '') + lines2[i].replace(/\r/g, '') + lines3[i].replace(/\r/g, ''));
+  }
+
+  const targetHeaders = ["年", "月", "日", "平均気温(℃)", "降水量の合計(mm)", "日照時間(時間)",
+    "最高気温(℃)", "最低気温(℃)"];
+  let indicesToSelect = targetHeaders.map(header => combinedHead.findIndex(h => h.includes(header)));
+
+  const dataLines = lines.slice(6).map(line => {
+    const cols = line.split(',');
+    const selectedCols = indicesToSelect.map(index => index >= 0 ? cols[index] || '0' : '0');
+    return selectedCols.join(',');
+  });
+
+  dataLines.unshift(targetHeaders.join(','));
+  return dataLines.slice(1).map(line => {
+    const cols = line.split(",");
+    return {
+      date: new Date(Date.UTC(cols[0], cols[1] - 1, cols[2])),
+      temperature: parseFloat(cols[3]) || 0,
+      precipitation: parseFloat(cols[4]) || 0,
+      sunshine: parseFloat(cols[5]) || 0,
+      maxTemperature: parseFloat(cols[6]) || 0,
+      minTemperature: parseFloat(cols[7]) || 0
+    };
+  });
+}
+
+// デフォルト日付を設定する関数
+function setDefaultDates() {
+  if (csvData.length === 0) return;
+
+  // データの最初と最後の日付を取得
+  const firstDate = csvData[0].date;
+  const lastDate = csvData[csvData.length - 1].date;
+
+  // 終了日 = データの最終日
+  const endDateInput = document.getElementById('cultivationEndDate');
+  endDateInput.value = lastDate.toISOString().split('T')[0];
+
+  // 開始日 = 終了日の2ヶ月前
+  const startDate = new Date(lastDate);
+  startDate.setMonth(startDate.getMonth() - 2);
+  const startDateInput = document.getElementById('cultivationStartDate');
+  startDateInput.value = startDate.toISOString().split('T')[0];
+}
+
+function handleFileSelect() {
+  if (csvData.length === 0) {
+    alert('先にCSVファイルを選択してください');
+    return;
+  }
+
+  // 日付フィルタ
+  const startDate = document.getElementById('cultivationStartDate').value ? 
+    new Date(document.getElementById('cultivationStartDate').value) : null;
+  const endDate = document.getElementById('cultivationEndDate').value ? 
+    new Date(document.getElementById('cultivationEndDate').value) : null;
+
+  let filteredData = csvData.filter(d => {
+    if (startDate && d.date < startDate) return false;
+    if (endDate && d.date > endDate) return false;
+    return true;
+  });
+
+  if (filteredData.length === 0) {
+    alert('指定された日付範囲内にデータがありません');
+    return;
+  }
+
+  // グラフ表示
+  document.getElementById('chartcanvas').style.display = 'block';
+  document.getElementById('annualCharts').style.display = 'block';
+
+  drawDailyCharts(filteredData);
+  handleAnnualGraphUpdate();
+}
+
+function drawDailyCharts(data) {
+  const labels = data.map(d => d.date.toLocaleDateString('ja-JP'));
+  const temps = data.map(d => d.temperature);
+  const precs = data.map(d => d.precipitation);
+  const suns = data.map(d => d.sunshine);
+  const maxTemps = data.map(d => d.maxTemperature);
+  const minTemps = data.map(d => d.minTemperature);
+
+  const tempMax = parseFloat(document.getElementById('tempMax').value) || 40;
+  const precMax = parseFloat(document.getElementById('precMax').value) || 100;
+  const sunMax = parseFloat(document.getElementById('sunMax').value) || 16;
+
+  // 気温グラフ
+  if (charts.dailyTemp) charts.dailyTemp.destroy();
+  charts.dailyTemp = new Chart(document.getElementById('dailyTempChart'), {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [
+        {
+          label: '平均気温(℃)',
+          data: temps,
+          borderColor: 'orange',
+          backgroundColor: 'rgba(255, 165, 0, 0.1)',
+          borderWidth: 2,
+          tension: 0.1
+        },
+        {
+          label: '最高気温(℃)',
+          data: maxTemps,
+          borderColor: 'red',
+          borderWidth: 1,
+          borderDash: [5, 5],
+          tension: 0.1
+        },
+        {
+          label: '最低気温(℃)',
+          data: minTemps,
+          borderColor: 'blue',
+          borderWidth: 1,
+          borderDash: [5, 5],
+          tension: 0.1
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      scales: {
+        y: {
+          min: 0,
+          max: tempMax,
+          title: { display: true, text: '℃' }
+        }
+      },
+      plugins: {
+        legend: { display: true, position: 'top' }
+      }
+    }
+  });
+
+  // 降水量グラフ
+  if (charts.dailyPrec) charts.dailyPrec.destroy();
+  charts.dailyPrec = new Chart(document.getElementById('dailyPrecChart'), {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [
+        {
+          label: '降水量(mm)',
+          data: precs,
+          backgroundColor: 'rgba(0, 100, 200, 0.7)',
+          borderColor: 'blue',
+          borderWidth: 1
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      scales: {
+        y: {
+          min: 0,
+          max: precMax,
+          title: { display: true, text: 'mm' }
+        }
+      },
+      plugins: {
+        legend: { display: true, position: 'top' }
+      }
+    }
+  });
+
+  // 日照時間グラフ
+  if (charts.dailySun) charts.dailySun.destroy();
+  charts.dailySun = new Chart(document.getElementById('dailySunChart'), {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [
+        {
+          label: '日照時間(時間)',
+          data: suns,
+          backgroundColor: 'rgba(218, 165, 32, 0.7)',
+          borderColor: 'goldenrod',
+          borderWidth: 1
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      scales: {
+        y: {
+          min: 0,
+          max: sunMax,
+          title: { display: true, text: '時間' }
+        }
+      },
+      plugins: {
+        legend: { display: true, position: 'top' }
+      }
+    }
+  });
+}
+
+function handleAnnualGraphUpdate() {
+  const annualMap = {};
+  csvData.forEach(d => {
+    const year = d.date.getFullYear();
+    if (!annualMap[year]) {
+      annualMap[year] = {
+        temperatureSum: 0, temperatureCount: 0,
+        maxTempSum: 0, maxTempCount: 0,
+        minTempSum: 0, minTempCount: 0,
+        precipitationSum: 0,
+        sunshineSum: 0,
+        maxTemp: d.maxTemperature,
+        minTemp: d.minTemperature
+      };
+    } else {
+      if (!isNaN(d.maxTemperature)) {
+        annualMap[year].maxTempSum += d.maxTemperature;
+        annualMap[year].maxTempCount++;
+        annualMap[year].maxTemp = Math.max(annualMap[year].maxTemp, d.maxTemperature);
+      }
+      if (!isNaN(d.minTemperature)) {
+        annualMap[year].minTempSum += d.minTemperature;
+        annualMap[year].minTempCount++;
+        annualMap[year].minTemp = Math.min(annualMap[year].minTemp, d.minTemperature);
+      }
+    }
+
+    if (!isNaN(d.temperature)) {
+      annualMap[year].temperatureSum += d.temperature;
+      annualMap[year].temperatureCount++;
+    }
+    if (!isNaN(d.precipitation)) {
+      annualMap[year].precipitationSum += d.precipitation;
+    }
+    if (!isNaN(d.sunshine)) {
+      annualMap[year].sunshineSum += d.sunshine;
+    }
+  });
+
+  const labels = Object.keys(annualMap).sort();
+  const avgTemps = labels.map(y => annualMap[y].temperatureSum / annualMap[y].temperatureCount);
+  const maxTemps = labels.map(y => annualMap[y].maxTemp);
+  const minTemps = labels.map(y => annualMap[y].minTemp);
+  const precSums = labels.map(y => annualMap[y].precipitationSum);
+  const sunSums = labels.map(y => annualMap[y].sunshineSum);
+
+  drawAnnualCharts(labels, avgTemps, maxTemps, minTemps, precSums, sunSums);
+}
+
+function drawAnnualCharts(labels, avgTemps, maxTemps, minTemps, precSums, sunSums) {
+  const createChart = (canvasId, datasets, yLabel) => {
+    const ctx = document.getElementById(canvasId).getContext('2d');
+    if (window.annualCharts && window.annualCharts[canvasId]) {
+      window.annualCharts[canvasId].destroy();
+    }
+    if (!window.annualCharts) window.annualCharts = {};
+    
+    window.annualCharts[canvasId] = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: labels,
+        datasets: datasets
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: true,
+        plugins: {
+          legend: { labels: { font: { size: 14 } } }
+        },
+        scales: {
+          x: {
+            title: {
+              display: true,
+              text: '年',
+              font: { size: 14 }
+            },
+            ticks: { font: { size: 12 } }
+          },
+          y: {
+            title: {
+              display: true,
+              text: yLabel,
+              font: { size: 14 }
+            },
+            ticks: { font: { size: 12 } }
+          }
+        }
+      }
+    });
+  };
+
+  createChart('annualTempChart', [
+    {
+      label: '平均気温(℃)',
+      data: avgTemps,
+      borderColor: 'orange',
+      borderWidth: 2,
+      fill: false,
+      tension: 0.1
+    },
+    {
+      label: '最高気温(℃)',
+      data: maxTemps,
+      borderColor: 'red',
+      borderWidth: 2,
+      fill: false,
+      tension: 0.1
+    },
+    {
+      label: '最低気温(℃)',
+      data: minTemps,
+      borderColor: 'blue',
+      borderWidth: 2,
+      fill: false,
+      tension: 0.1
+    }
+  ], '℃');
+
+  createChart('annualPrecChart', [
+    {
+      label: '累積降水量(mm)',
+      data: precSums,
+      borderColor: 'blue',
+      borderWidth: 2,
+      fill: false,
+      tension: 0.1
+    }
+  ], 'mm');
+
+  createChart('annualSunChart', [
+    {
+      label: '日照時間積算(時間)',
+      data: sunSums,
+      borderColor: 'goldenrod',
+      borderWidth: 2,
+      fill: false,
+      tension: 0.1
+    }
+  ], '時間');
+}
+
+</script>
+</body>
+</html>
