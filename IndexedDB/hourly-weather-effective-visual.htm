@@ -258,6 +258,84 @@
 
 </script>
     <style>
+/* ===== グラフ拡大ポップアップ ===== */
+canvas { cursor: zoom-in; }
+.chart-zoom-modal {
+  display: none;
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.75);
+  z-index: 9999;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.chart-zoom-modal.active { display: flex; }
+.chart-zoom-content {
+  background: #fff;
+  border-radius: 8px;
+  padding: 20px;
+  width: 100%;
+  max-width: 900px;
+  max-height: 90vh;
+  position: relative;
+  box-sizing: border-box;
+}
+.chart-zoom-content canvas {
+  width: 100% !important;
+  height: 70vh !important;
+  max-height: 70vh;
+  cursor: default;
+}
+.chart-zoom-close {
+  position: absolute;
+  top: 8px; right: 8px;
+  background: #e53935;
+  color: #fff;
+  border: none;
+  border-radius: 50%;
+  width: 36px; height: 36px;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  z-index: 1;
+}
+.chart-zoom-close:hover { background: #c62828; }
+/* ================================== */
+
+/* ===== レスポンシブ対応: スマホ画面での崩れ防止(縦向き・横向き共通) ===== */
+* { box-sizing: border-box; }
+html, body { max-width: 100%; overflow-x: hidden; }
+
+/* 縦向きスマホ(幅が狭い場合) */
+@media (max-width: 480px) {
+  .container, .chart-container, .table-container, .charts-container {
+    min-width: 0 !important;
+    width: 100% !important;
+  }
+  #fileInput, input[type="date"], input[type="number"], input[type="file"], form {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+}
+
+/* 横向きスマホ(幅は広いが高さが低い場合) */
+@media (orientation: landscape) and (max-height: 500px) {
+  .container, .chart-container, .table-container, .charts-container {
+    min-width: 0 !important;
+  }
+  .chart-zoom-content {
+    max-height: 95vh;
+    padding: 10px;
+    overflow-y: auto;
+  }
+  .chart-zoom-content canvas {
+    height: 60vh !important;
+    max-height: 60vh;
+  }
+}
+/* ==================================================== */
+
 @media print {
 * {
   margin: 0;
@@ -1169,5 +1247,66 @@ const formatDateForGraph = (date) => {
 
 
     </script>
+
+<!-- ===== グラフ拡大ポップアップ ===== -->
+<div id="chartZoomModal" class="chart-zoom-modal">
+  <div class="chart-zoom-content">
+    <button type="button" id="chartZoomClose" class="chart-zoom-close" aria-label="閉じる">&times;</button>
+    <canvas id="chartZoomCanvas"></canvas>
+  </div>
+</div>
+<script>
+(function() {
+  var zoomChart = null;
+  var modal = document.getElementById('chartZoomModal');
+  var zoomCanvas = document.getElementById('chartZoomCanvas');
+  var closeBtn = document.getElementById('chartZoomClose');
+
+  function openZoom(sourceCanvas) {
+    if (typeof Chart === 'undefined' || typeof Chart.getChart !== 'function') return;
+    var chart = Chart.getChart(sourceCanvas);
+    if (!chart) return; // データ未読込などでグラフが存在しない場合は何もしない
+
+    if (zoomChart) { zoomChart.destroy(); zoomChart = null; }
+
+    var config;
+    try {
+      config = {
+        type: chart.config.type,
+        data: JSON.parse(JSON.stringify(chart.config.data)),
+        options: JSON.parse(JSON.stringify(chart.config.options || {}))
+      };
+    } catch (e) {
+      console.warn('グラフ拡大用の設定コピーに失敗しました:', e);
+      return;
+    }
+    config.options.responsive = true;
+    config.options.maintainAspectRatio = false;
+
+    zoomChart = new Chart(zoomCanvas.getContext('2d'), config);
+    modal.classList.add('active');
+  }
+
+  function closeZoom() {
+    modal.classList.remove('active');
+    if (zoomChart) { zoomChart.destroy(); zoomChart = null; }
+  }
+
+  document.addEventListener('click', function(e) {
+    var canvas = e.target.closest && e.target.closest('canvas');
+    if (!canvas || canvas.id === 'chartZoomCanvas') return;
+    openZoom(canvas);
+  });
+
+  closeBtn.addEventListener('click', closeZoom);
+  modal.addEventListener('click', function(e) {
+    if (e.target === modal) closeZoom();
+  });
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closeZoom();
+  });
+})();
+</script>
+<!-- ================================== -->
 </body>
 </html>
