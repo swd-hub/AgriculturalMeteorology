@@ -57,8 +57,6 @@ h2 {
     </div>
     <p>または、こちらからファイルを選択:</p>
     <input type="file" id="fileInput" multiple accept=".csv">
-    <button type="button" id="clearCacheBtn">IndexedDBデータをメモリから削除</button>
-    <span id="cacheStatus"></span>
 
     <h2>ドロップしたファイル名一覧:</h2>
     <ul id="fileList"></ul>
@@ -126,42 +124,27 @@ h2 {
     }
 
 async function handleFileSelect(files) {
-    if (!files || files.length === 0) return;
-
-    const fileList = document.getElementById("fileList");
-    if (fileList) {
-        fileList.innerHTML = "";
-        for (const file of files) {
-            const listItem = document.createElement("li");
-            listItem.textContent = file.name;
-            fileList.appendChild(listItem);
-        }
-    }
+    if (files.length === 0) return;
 
     const localHeadersList = [];
-    allDataLines = [];
-    headers = [];
 
     for (const file of files) {
-        let utf8Content;
-        if (typeof file.content === 'string') {
-            utf8Content = file.content;
-        } else {
-            const content = await file.arrayBuffer();
-            utf8Content = shiftJISToUTF8(content);
-        }
+        const content = await file.arrayBuffer();
+        const utf8Content = shiftJISToUTF8(content);
         const lines = utf8Content.replace(/\r\n|\r/g, "\n").split("\n");
 
         const reordered = reorderCSVContent(lines);
 
-        const headerPart = reordered.slice(1, 5);  // 2-5
+        // メタ情報（1行目）を除いた部分を比較用に保存
+        const headerPart = reordered.slice(1, 5);  // 2〜5行目
         
         console.log("headerPart", headerPart);
         
         localHeadersList.push(headerPart.join("\n").trim());
 
+        // 1ファイル目で表示用ヘッダーを保存（メタ情報含む）
         if (headers.length === 0 && !file.name.includes("data")) {
-            headers = reordered.slice(0, 6);
+            headers = reordered.slice(0, 6);  // 表示用には1〜6行目保持
         }
 
         allDataLines.push(...reordered.slice(6));
@@ -170,10 +153,10 @@ async function handleFileSelect(files) {
     if (localHeadersList.length >= 2) {
         const [header1, header2] = localHeadersList;
         if (header1 !== header2) {
-            alert("ヘッダーが一致していません。異なる形式のCSVファイルです。");
+            alert("⚠ ヘッダーが一致していません。異なる形式のCSVファイルです。");
         }
     }
-}
+} // ← ここが補完された閉じカッコ
 
     function mergeAndPreviewCSV() {
         const uniqueDataMap = new Map();
@@ -275,26 +258,6 @@ async function handleFileSelect(files) {
 
     // 初期イベント設定
     document.addEventListener("DOMContentLoaded", function () {
-        CsvIndexedDBCache.setupUI({
-            dbName: 'add_daily_data_db',
-            fileInputId: 'fileInput',
-            clearBtnId: 'clearCacheBtn',
-            statusId: 'cacheStatus',
-            isMultiple: true,
-            onRestored: function(files) {
-                handleFileSelect(files);
-                mergeAndPreviewCSV();
-            },
-            onCleared: function() {
-                const previewElement = document.getElementById("mergedPreview");
-                if (previewElement) previewElement.textContent = "";
-                const fileList = document.getElementById("fileList");
-                if (fileList) fileList.innerHTML = "";
-                allDataLines = [];
-                headers = [];
-            }
-        });
-
         const dropArea = document.getElementById("drop-area");
 
         dropArea.addEventListener("dragover", (event) => {
@@ -306,22 +269,22 @@ async function handleFileSelect(files) {
             dropArea.style.backgroundColor = "";
         });
 
-        dropArea.addEventListener("drop", async (event) => {
+        dropArea.addEventListener("drop", (event) => {
             event.preventDefault();
             dropArea.style.backgroundColor = "";
             const files = event.dataTransfer.files;
-            if (files.length > 0) {
-                const loadedFiles = [];
-                for (const file of files) {
-                    const arrayBuffer = await file.arrayBuffer();
-                    const text = CsvIndexedDBCache.shiftJISToUTF8(arrayBuffer);
-                    loadedFiles.push({ name: file.name, content: text });
-                }
-                await CsvIndexedDBCache.saveMultiple('add_daily_data_db', loadedFiles);
-                CsvIndexedDBCache.updateStatus(document.getElementById('cacheStatus'));
-                handleFileSelect(loadedFiles);
-            }
+            handleFileSelect(files);
+            displayFileNames(files);
         });
+
+        const fileInput = document.getElementById("fileInput");
+        if (fileInput) {
+            fileInput.addEventListener("change", (event) => {
+                const files = event.target.files;
+                handleFileSelect(files);
+                displayFileNames(files);
+            });
+        }
 
         const mergeButton = document.getElementById('mergeButton');
         if (mergeButton) {
@@ -334,7 +297,6 @@ async function handleFileSelect(files) {
         }
     });
 </script>
-<script src="csv-indexeddb-cache.js"></script>
 
 </body>
 

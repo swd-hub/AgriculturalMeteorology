@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
@@ -502,6 +502,78 @@ input[type="date"] {
       }
     });
   }
+</script>
+<!-- Region Name Legend Injector -->
+<script>
+(function() {
+    function getRegionName() {
+        let fileName = '';
+        const fileInput = document.querySelector('input[type="file"]');
+        if (fileInput && fileInput.files && fileInput.files[0]) {
+            fileName = fileInput.files[0].name;
+        }
+        if (!fileName && typeof CsvIndexedDBCache !== 'undefined' && CsvIndexedDBCache.memory && CsvIndexedDBCache.memory.fileName) {
+            fileName = CsvIndexedDBCache.memory.fileName;
+        }
+        
+        if (!fileName) {
+            const htmlName = window.location.pathname.split('/').pop();
+            if (htmlName.includes('izumo')) {
+                return '\u51fa\u96f2';
+            }
+            return '';
+        }
+
+        const baseName = fileName.split('/').pop().split('\\').pop();
+        const match = baseName.match(/^(.*?)[-_0-9]/);
+        let region = match ? match[1] : baseName.replace(/\.[^/.]+$/, "");
+        region = region.replace(/^(nightlength|weather|annual|compare|hourly|yearly|predict|visualize)[-_]?/i, '');
+        region = region.replace(/(csv|fetch|plot|data|reach)$/i, '');
+        
+        if (region.toLowerCase() === 'izumo') {
+            return '\u51fa\u96f2';
+        }
+        return region || baseName.replace(/\.[^/.]+$/, "");
+    }
+
+    function updateAllRegionDisplays() {
+        const region = getRegionName();
+        if (!region) return;
+
+        const canvases = document.querySelectorAll('canvas');
+        canvases.forEach(canvas => {
+            if (canvas.id === 'chartZoomCanvas') return;
+            let labelEl = canvas.previousElementSibling;
+            if (!labelEl || !labelEl.classList.contains('chart-region-label')) {
+                labelEl = document.createElement('div');
+                labelEl.className = 'chart-region-label';
+                labelEl.style.textAlign = 'center';
+                labelEl.style.fontSize = '18px';
+                labelEl.style.fontWeight = 'bold';
+                labelEl.style.marginTop = '10px';
+                labelEl.style.marginBottom = '5px';
+                labelEl.style.color = '#333';
+                canvas.parentNode.insertBefore(labelEl, canvas);
+            }
+            labelEl.textContent = '\u5bfe\u8c61\u30c7\u30fc\u30bf: ' + region;
+        });
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        updateAllRegionDisplays();
+        let checkCount = 0;
+        const interval = setInterval(() => {
+            updateAllRegionDisplays();
+            if (++checkCount > 10) clearInterval(interval);
+        }, 500);
+    });
+
+    document.addEventListener('change', (e) => {
+        if (e.target && (e.target.type === 'file' || e.target.id === 'fileInput' || e.target.id === 'csvFile')) {
+            setTimeout(updateAllRegionDisplays, 100);
+        }
+    });
+})();
 </script>
 </body>
 </html>
