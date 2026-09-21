@@ -43,6 +43,10 @@ h2 {
 #fileList {
     margin-top: 10px;
 }
+#errorMessage {
+    color: #b00020;
+    font-weight: bold;
+}
 </style>
 <body>
     <div class="right-align">
@@ -60,6 +64,7 @@ h2 {
 
     <h2>ドロップしたファイル名一覧:</h2>
     <ul id="fileList"></ul>
+    <p id="errorMessage" role="alert"></p>
 
     <button id="mergeButton">データの追加と表示</button>
 
@@ -74,11 +79,34 @@ h2 {
     let droppedFileNames = [];
     let headers = [];
     let allDataLines = [];
+    let selectedRegion = null;
+    let mergeRejected = false;
 
     // Shift-JISをUTF-8に変換
     function shiftJISToUTF8(arrayBuffer) {
         const decoder = new TextDecoder("shift-jis");
         return decoder.decode(new Uint8Array(arrayBuffer));
+    }
+
+    function getRegion(headerLines) {
+        // 気象庁CSVの2行目4列目が地域（地点）名です。
+        const columns = (headerLines[1] || '').split(',');
+        return (columns[3] || '').trim().replace(/^"|"$/g, '');
+    }
+
+    function showError(message) {
+        const errorElement = document.getElementById('errorMessage');
+        if (errorElement) errorElement.textContent = message;
+        alert(message);
+    }
+
+    function clearMergeData() {
+        headers = [];
+        allDataLines = [];
+        selectedRegion = null;
+        mergeRejected = true;
+        const previewElement = document.getElementById('mergedPreview');
+        if (previewElement) previewElement.textContent = '';
     }
 
     // CSVのクレンジングと再構成
@@ -126,39 +154,65 @@ h2 {
 async function handleFileSelect(files) {
     if (files.length === 0) return;
 
+    const pendingFiles = [];
     const localHeadersList = [];
 
     for (const file of files) {
         const content = await file.arrayBuffer();
         const utf8Content = shiftJISToUTF8(content);
         const lines = utf8Content.replace(/\r\n|\r/g, "\n").split("\n");
-
         const reordered = reorderCSVContent(lines);
 
-        // メタ情報（1行目）を除いた部分を比較用に保存
+        if (reordered.length < 6) {
+            clearMergeData();
+            showError(`CSVファイル「${file.name}」のヘッダーを読み取れないため、追加を中止しました。`);
+            return;
+        }
+
         const headerPart = reordered.slice(1, 5);  // 2〜5行目
-        
-        console.log("headerPart", headerPart);
-        
         localHeadersList.push(headerPart.join("\n").trim());
+        pendingFiles.push({
+            file,
+            reordered,
+            region: getRegion(reordered)
+        });
+    }
 
+    const regions = [...new Set(pendingFiles.map(item => item.region))];
+    if (selectedRegion !== null) regions.push(selectedRegion);
+    const uniqueRegions = [...new Set(regions)];
+    if (uniqueRegions.length > 1 || uniqueRegions[0] === '') {
+        clearMergeData();
+        showError(`地域が異なるCSVファイルはマージできません。\n検出した地域: ${uniqueRegions.filter(Boolean).join('、') || '不明'}`);
+        return;
+    }
+
+    if (localHeadersList.length >= 2 && localHeadersList.some(header => header !== localHeadersList[0])) {
+        clearMergeData();
+        showError('ヘッダーが一致していません。異なる形式のCSVファイルのため、マージを中止しました。');
+        return;
+    }
+
+    selectedRegion = uniqueRegions[0];
+    mergeRejected = false;
+    const errorElement = document.getElementById('errorMessage');
+    if (errorElement) errorElement.textContent = '';
+
+    for (const item of pendingFiles) {
         // 1ファイル目で表示用ヘッダーを保存（メタ情報含む）
-        if (headers.length === 0 && !file.name.includes("data")) {
-            headers = reordered.slice(0, 6);  // 表示用には1〜6行目保持
+        if (headers.length === 0 && !item.file.name.includes("data")) {
+            headers = item.reordered.slice(0, 6);  // 表示用には1〜6行目保持
         }
-
-        allDataLines.push(...reordered.slice(6));
+        allDataLines.push(...item.reordered.slice(6));
     }
-
-    if (localHeadersList.length >= 2) {
-        const [header1, header2] = localHeadersList;
-        if (header1 !== header2) {
-            alert("⚠ ヘッダーが一致していません。異なる形式のCSVファイルです。");
-        }
-    }
-} // ← ここが補完された閉じカッコ
+}
 
     function mergeAndPreviewCSV() {
+        if (mergeRejected || !selectedRegion || allDataLines.length === 0) {
+            showError('地域が一致するCSVファイルを選択してからマージしてください。');
+            return;
+        }
+
         const uniqueDataMap = new Map();
 
         allDataLines.forEach(line => {
@@ -212,8 +266,8 @@ async function handleFileSelect(files) {
 
     function downloadEditedCSV() {
         const previewElement = document.getElementById("mergedPreview");
-        if (!previewElement) {
-            console.error("プレビューエリアが見つかりません");
+        if (!previewElement || mergeRejected || !previewElement.textContent.trim()) {
+            showError('マージ済みデータがないため、ダウンロードできません。');
             return;
         }
 
