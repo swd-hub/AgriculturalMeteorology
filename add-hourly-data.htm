@@ -170,20 +170,38 @@ console.log("combinedHead",combinedHead);
     const reorderedLines = dataLines.map((line) => {
         const cols = line.split(/,(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)/);
         const reordered = indicesToSelect.map(index => (index >= 0 ? cols[index] || '0' : '0')).join(",");
+        const hourlyDateParts = parseHourlyDate(cols[indicesToSelect[0]]);
+
+        if (hourlyDateParts) {
+            const reorderedColumns = reordered.split(",");
+            reorderedColumns.splice(0, 4, ...hourlyDateParts);
+            return reorderedColumns.join(",");
+        }
+
         return reordered;
     });
 
     return [...headerLines, ...reorderedLines];
 }
 
+function parseHourlyDate(value) {
+    if (!value) return null;
+
+    const match = value.trim().match(/^(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})(?:[ T](\d{1,2})(?::(\d{1,2}))?)/);
+    return match ? [match[1], match[2], match[3], match[4]] : null;
+}
+
 let headers = [];
 let allDataLines = [];
+let selectedRegion = "";
 
 
 async function handleFileSelect(files) {
     if (files.length === 0) return;
 
     const localHeadersList = [];
+    const localFiles = [];
+    let localRegion = "";
 
     for (const file of files) {
         const content = await file.arrayBuffer();
@@ -199,22 +217,59 @@ async function handleFileSelect(files) {
         console.log("headerPart", headerPart);
 
         localHeadersList.push(headerPart.join("\n").trim());
+        const region = getRegionFromHeader(reordered[1]);
 
+        if (!region) {
+            showReloadError(`⚠ ${file.name} の地域情報を確認できないため、読み込みを中止しました。`);
+            return;
+        }
+
+        if (localRegion === "") {
+            localRegion = region;
+        } else if (localRegion !== region) {
+            showReloadError("⚠ 地域が異なるCSVファイルはマージできません。読み込みを中止しました。");
+            return;
+        }
+
+        localFiles.push({ file, reordered });
+    }
+
+    if (selectedRegion !== "" && selectedRegion !== localRegion) {
+        showReloadError("⚠ 既に読み込まれているCSVと地域が異なるため、読み込みを中止しました。");
+        return;
+    }
+
+    for (const { file, reordered } of localFiles) {
         // ファイル名に "data" が含まれない場合にヘッダーを採用
         if (headers.length === 0 && !file.name.includes("data")) {
             headers = reordered.slice(0, 4); // 最初の4行をヘッダーとして保存
         }
 
         // データ行を追加
+
         allDataLines.push(...reordered.slice(4));
     }
+
+    selectedRegion = localRegion;
 
     if (localHeadersList.length >= 2) {
         const [header1, header2] = localHeadersList;
         if (header1 !== header2) {
-            alert("⚠ ヘッダーが一致していません。異なる形式のCSVファイルです。");
+            showReloadError("⚠ ヘッダーが一致していません。異なる形式のCSVファイルです。");
         }
     }
+}
+
+function getRegionFromHeader(headerLine) {
+    if (!headerLine) return "";
+
+    const columns = headerLine.split(",");
+    return columns.find(column => column.trim() !== "")?.trim() || "";
+}
+
+function showReloadError(message) {
+    alert(`${message}\n\nOKを押すとページを再読み込みします。`);
+    location.reload();
 }
 
 

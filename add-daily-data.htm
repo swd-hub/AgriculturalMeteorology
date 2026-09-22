@@ -74,6 +74,7 @@ h2 {
     let droppedFileNames = [];
     let headers = [];
     let allDataLines = [];
+    let selectedRegion = "";
 
     // Shift-JISをUTF-8に変換
     function shiftJISToUTF8(arrayBuffer) {
@@ -117,16 +118,33 @@ h2 {
         const reorderedLines = dataLines.map((line) => {
             const cols = line.split(/,(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)/);
             const reordered = indicesToSelect.map(index => (index >= 0 ? cols[index] || '0' : '0')).join(",");
+            const dailyDateParts = parseDailyDate(cols[indicesToSelect[0]]);
+
+            if (dailyDateParts) {
+                const reorderedColumns = reordered.split(",");
+                reorderedColumns.splice(0, 3, ...dailyDateParts);
+                return reorderedColumns.join(",");
+            }
+
             return reordered;
         });
 
         return [...headerLines, ...reorderedLines];
     }
 
+    function parseDailyDate(value) {
+        if (!value) return null;
+
+        const match = value.trim().match(/^(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})/);
+        return match ? [match[1], match[2], match[3]] : null;
+    }
+
 async function handleFileSelect(files) {
     if (files.length === 0) return;
 
     const localHeadersList = [];
+    const localFiles = [];
+    let localRegion = "";
 
     for (const file of files) {
         const content = await file.arrayBuffer();
@@ -141,6 +159,29 @@ async function handleFileSelect(files) {
         console.log("headerPart", headerPart);
         
         localHeadersList.push(headerPart.join("\n").trim());
+        const region = getRegionFromHeader(reordered[1]);
+
+        if (!region) {
+            showReloadError(`⚠ ${file.name} の地域情報を確認できないため、読み込みを中止しました。`);
+            return;
+        }
+
+        if (localRegion === "") {
+            localRegion = region;
+        } else if (localRegion !== region) {
+            showReloadError("⚠ 地域が異なるCSVファイルはマージできません。読み込みを中止しました。");
+            return;
+        }
+
+        localFiles.push({ file, reordered });
+    }
+
+    if (selectedRegion !== "" && selectedRegion !== localRegion) {
+        showReloadError("⚠ 既に読み込まれているCSVと地域が異なるため、読み込みを中止しました。");
+        return;
+    }
+
+    for (const { file, reordered } of localFiles) {
 
         // 1ファイル目で表示用ヘッダーを保存（メタ情報含む）
         if (headers.length === 0 && !file.name.includes("data")) {
@@ -150,20 +191,36 @@ async function handleFileSelect(files) {
         allDataLines.push(...reordered.slice(6));
     }
 
+    selectedRegion = localRegion;
+
     if (localHeadersList.length >= 2) {
         const [header1, header2] = localHeadersList;
         if (header1 !== header2) {
-            alert("⚠ ヘッダーが一致していません。異なる形式のCSVファイルです。");
+            showReloadError("⚠ ヘッダーが一致していません。異なる形式のCSVファイルです。");
         }
     }
 } // ← ここが補完された閉じカッコ
+
+    function getRegionFromHeader(headerLine) {
+        if (!headerLine) return "";
+
+        const columns = headerLine.split(",");
+        return columns.find(column => column.trim() !== "")?.trim() || "";
+    }
+
+    function showReloadError(message) {
+        alert(`${message}\n\nOKを押すとページを再読み込みします。`);
+        location.reload();
+    }
 
     function mergeAndPreviewCSV() {
         const uniqueDataMap = new Map();
 
         allDataLines.forEach(line => {
-            const [year, month, day] = line.split(",");
-            const dateKey = `${year}-${month}-${day}`;
+            const date = getDailyDate(line);
+            if (Number.isNaN(date.getTime())) return;
+
+            const dateKey = date.toISOString().slice(0, 10);
 
             if (!uniqueDataMap.has(dateKey)) {
                 uniqueDataMap.set(dateKey, line);
@@ -195,11 +252,12 @@ async function handleFileSelect(files) {
         const words = secondHeaderLine.split(",");
         const firstChar = words[3] || "デフォルト";
 
-        const dates = dataLines.map(line => {
-            const columns = line.split(",");
-            const [year, month, day] = columns;
-            return new Date(year, month - 1, day);
-        });
+        const dates = dataLines.map(getDailyDate)
+            .filter(date => !Number.isNaN(date.getTime()));
+
+        if (dates.length === 0) {
+            return `${firstChar}日別値.csv`;
+        }
 
         const latestDate = new Date(Math.max(...dates));
         const yyyy = latestDate.getFullYear();
@@ -208,6 +266,19 @@ async function handleFileSelect(files) {
         const formattedDate = `${yyyy}-${mm}-${dd}`;
 
         return `${firstChar}日別値${formattedDate}.csv`;
+    }
+
+    function getDailyDate(line) {
+        const columns = line.split(",");
+        const dateText = columns[0].trim();
+        const dateParts = dateText.match(/^(\d{4})[\/-](\d{1,2})[\/-](\d{1,2})/);
+
+        if (dateParts) {
+            return new Date(Number(dateParts[1]), Number(dateParts[2]) - 1, Number(dateParts[3]));
+        }
+
+        const [year, month, day] = columns.map(Number);
+        return new Date(year, month - 1, day);
     }
 
     function downloadEditedCSV() {
